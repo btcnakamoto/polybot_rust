@@ -219,9 +219,9 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(Decimal::new(60, 2)),
             min_total_trades_for_signal: env::var("MIN_TOTAL_TRADES_FOR_SIGNAL")
-                .unwrap_or_else(|_| "50".into())
+                .unwrap_or_else(|_| "100".into())
                 .parse()
-                .unwrap_or(50),
+                .unwrap_or(100),
             min_signal_notional: env::var("MIN_SIGNAL_NOTIONAL")
                 .unwrap_or_else(|_| "50000".into())
                 .parse()

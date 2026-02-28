@@ -60,7 +60,7 @@ async fn build_test_app() -> (axum::Router, Arc<AtomicBool>) {
         tracked_whale_min_notional: rust_decimal::Decimal::from(500),
         min_resolved_for_signal: 5,
         min_signal_win_rate: rust_decimal::Decimal::new(60, 2),
-        min_total_trades_for_signal: 50,
+        min_total_trades_for_signal: 100,
         min_signal_notional: rust_decimal::Decimal::from(50_000),
         max_signal_notional: rust_decimal::Decimal::from(500_000),
         min_signal_ev: rust_decimal::Decimal::from(50),
