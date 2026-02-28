@@ -38,6 +38,9 @@ reqwest = { version = "0.13", features = ["json"] }
 # WebSocket
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 
+# TLS (explicit crypto provider for rustls)
+rustls = { version = "0.23", features = ["ring"] }
+
 # Polymarket SDK (EIP-712 signing + CLOB order placement)
 polymarket-client-sdk = { version = "0.4", features = ["clob"] }
 

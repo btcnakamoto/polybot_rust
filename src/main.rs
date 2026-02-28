@@ -21,6 +21,11 @@ use polybot::{db, metrics, services, AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install rustls crypto provider before any TLS usage
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls CryptoProvider");
+
     dotenvy::dotenv().ok();
     init_tracing();
 
@@ -34,6 +39,12 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to database...");
     let db = db::init_pool(&config.database_url).await?;
     tracing::info!("Database connected");
+
+    // Run pending migrations
+    sqlx::migrate!("./migrations")
+        .run(&db)
+        .await?;
+    tracing::info!("Database migrations applied");
 
     // --- Telegram notifier ---
     let notifier: Option<Arc<Notifier>> = if config.notifications_enabled && config.has_telegram() {
