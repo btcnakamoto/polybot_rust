@@ -7,7 +7,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::db::{basket_repo, config_repo, market_repo, trade_repo, whale_repo};
-use crate::intelligence::basket::{check_admission, check_basket_consensus, AdmissionResult};
+use crate::intelligence::basket::{
+    auto_assign_to_baskets, check_admission, check_basket_consensus, infer_market_category,
+    AdmissionResult,
+};
 use crate::intelligence::classifier::Classification;
 use crate::intelligence::{classify_wallet, score_wallet};
 use crate::intelligence::scorer::WalletScore;
@@ -273,6 +276,22 @@ pub async fn process_trade_event(
                 reason = %reason,
                 "Wallet failed basket admission — will not participate in consensus"
             );
+        }
+    }
+
+    // Step 5b: Auto-assign admitted whale to matching-category baskets
+    if admitted {
+        if let Ok(Some(question)) = market_repo::get_market_question(pool, &event.market_id).await {
+            if let Some(cat) = infer_market_category(&question) {
+                match auto_assign_to_baskets(pool, whale.id, cat.as_str()).await {
+                    Ok(names) => {
+                        for name in &names {
+                            tracing::info!(wallet=%event.wallet, basket=%name, "Auto-assigned to basket");
+                        }
+                    }
+                    Err(e) => tracing::warn!(error=%e, "Auto-basket-assign failed"),
+                }
+            }
         }
     }
 

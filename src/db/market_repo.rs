@@ -71,6 +71,18 @@ pub async fn get_market_liquidity(pool: &PgPool, condition_id: &str) -> anyhow::
     Ok(row.map(|r| r.0))
 }
 
+/// Get the question text for a market by condition_id from active_markets.
+pub async fn get_market_question(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT question FROM active_markets WHERE condition_id = $1",
+    )
+    .bind(condition_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| r.0))
+}
+
 /// Get a single market outcome by market_id.
 pub async fn get_market_outcome(
     pool: &PgPool,

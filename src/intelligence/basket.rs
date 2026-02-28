@@ -1,9 +1,10 @@
 use chrono::{Duration, Utc};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::db::basket_repo::{self, BasketTradeVote};
-use crate::models::WhaleBasket;
+use crate::models::{BasketCategory, WhaleBasket};
 
 // ---------------------------------------------------------------------------
 // Admission
@@ -156,6 +157,79 @@ pub fn evaluate_consensus(
             ),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Market category inference
+// ---------------------------------------------------------------------------
+
+/// Infer a basket category from a market question using keyword matching.
+pub fn infer_market_category(question: &str) -> Option<BasketCategory> {
+    let q = question.to_lowercase();
+
+    let politics_keywords = [
+        "president", "election", "trump", "biden", "congress", "senate",
+        "governor", "democrat", "republican", "vote", "ballot", "political",
+        "party", "legislation", "minister", "parliament", "nato",
+    ];
+    let crypto_keywords = [
+        "bitcoin", "btc", "ethereum", "eth", "crypto", "token", "blockchain",
+        "solana", "sol", "dogecoin", "doge", "defi", "nft", "altcoin",
+    ];
+    let sports_keywords = [
+        "nba", "nfl", "mlb", "nhl", "fifa", "world cup", "championship",
+        "super bowl", "premier league", "playoffs", "mvp", "touchdown",
+        "slam dunk", "goal", "match", "tennis", "ufc", "boxing",
+    ];
+
+    if politics_keywords.iter().any(|kw| q.contains(kw)) {
+        return Some(BasketCategory::Politics);
+    }
+    if crypto_keywords.iter().any(|kw| q.contains(kw)) {
+        return Some(BasketCategory::Crypto);
+    }
+    if sports_keywords.iter().any(|kw| q.contains(kw)) {
+        return Some(BasketCategory::Sports);
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Auto-assign whale to matching baskets
+// ---------------------------------------------------------------------------
+
+/// Automatically add a whale to active baskets that match the given category
+/// and have room (count < max_wallets). Returns names of baskets assigned to.
+pub async fn auto_assign_to_baskets(
+    pool: &PgPool,
+    whale_id: Uuid,
+    category: &str,
+) -> anyhow::Result<Vec<String>> {
+    let baskets = basket_repo::get_active_baskets(pool).await?;
+    let mut assigned = Vec::new();
+
+    for basket in &baskets {
+        if basket.category != category {
+            continue;
+        }
+
+        let count = basket_repo::count_basket_whales(pool, basket.id).await?;
+        if count >= basket.max_wallets as i64 {
+            tracing::debug!(
+                basket = %basket.name,
+                count = count,
+                max = basket.max_wallets,
+                "Basket full — skipping auto-assign"
+            );
+            continue;
+        }
+
+        basket_repo::add_whale_to_basket(pool, basket.id, whale_id).await?;
+        assigned.push(basket.name.clone());
+    }
+
+    Ok(assigned)
 }
 
 // ---------------------------------------------------------------------------
@@ -390,6 +464,56 @@ mod tests {
 
         assert!(!check.reached);
         assert!(check.reason.contains("no votes"));
+    }
+
+    // --- Category inference tests ---
+
+    #[test]
+    fn test_infer_category_politics() {
+        assert_eq!(
+            infer_market_category("Will Trump win the 2024 election?"),
+            Some(BasketCategory::Politics)
+        );
+        assert_eq!(
+            infer_market_category("Will the Senate pass the bill?"),
+            Some(BasketCategory::Politics)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_crypto() {
+        assert_eq!(
+            infer_market_category("Will Bitcoin reach $100k by end of year?"),
+            Some(BasketCategory::Crypto)
+        );
+        assert_eq!(
+            infer_market_category("Will ETH flip BTC in market cap?"),
+            Some(BasketCategory::Crypto)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_sports() {
+        assert_eq!(
+            infer_market_category("Who will win the Super Bowl?"),
+            Some(BasketCategory::Sports)
+        );
+        assert_eq!(
+            infer_market_category("Will the NBA MVP be from the West?"),
+            Some(BasketCategory::Sports)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_unknown() {
+        assert_eq!(
+            infer_market_category("Will it rain in Paris tomorrow?"),
+            None
+        );
+        assert_eq!(
+            infer_market_category("What is the meaning of life?"),
+            None
+        );
     }
 
     #[test]
