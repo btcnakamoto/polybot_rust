@@ -53,6 +53,9 @@ pub struct AppConfig {
     pub whale_seeder_skip_top_n: usize,
     pub whale_seeder_min_trades: u32,
 
+    // Whale trade poller
+    pub whale_poller_interval_secs: u64,
+
     // Exit strategy (SL/TP)
     pub default_stop_loss_pct: Decimal,
     pub default_take_profit_pct: Decimal,
@@ -164,6 +167,11 @@ impl AppConfig {
                 .unwrap_or_else(|_| "100".into())
                 .parse()
                 .unwrap_or(100),
+
+            whale_poller_interval_secs: env::var("WHALE_POLLER_INTERVAL")
+                .unwrap_or_else(|_| "60".into())
+                .parse()
+                .unwrap_or(60),
 
             default_stop_loss_pct: env::var("STOP_LOSS_PCT")
                 .unwrap_or_else(|_| "15.0".into())

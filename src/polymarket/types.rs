@@ -79,18 +79,37 @@ pub struct WsTrade {
 pub struct WsSubscribe {
     #[serde(rename = "type")]
     pub msg_type: String,
-    pub channel: String,
-    pub assets_id: String,
+    pub assets_ids: Vec<String>,
 }
 
 impl WsSubscribe {
-    pub fn market_trades(asset_id: &str) -> Self {
+    /// Create a subscription message for multiple asset IDs at once.
+    /// Polymarket WS format: {"type": "market", "assets_ids": ["id1", "id2", ...]}
+    pub fn market(asset_ids: &[String]) -> Self {
         Self {
-            msg_type: "subscribe".into(),
-            channel: "market".into(),
-            assets_id: asset_id.into(),
+            msg_type: "market".into(),
+            assets_ids: asset_ids.to_vec(),
         }
     }
+}
+
+/// A trade event from the WebSocket (event_type: "last_trade_price").
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsTradeEvent {
+    #[serde(default)]
+    pub event_type: Option<String>,
+    #[serde(default)]
+    pub asset_id: Option<String>,
+    #[serde(default)]
+    pub market: Option<String>,
+    #[serde(default)]
+    pub side: Option<String>,
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub price: Option<String>,
+    #[serde(default)]
+    pub timestamp: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

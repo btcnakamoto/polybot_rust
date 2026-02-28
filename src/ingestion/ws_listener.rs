@@ -8,18 +8,27 @@ use tokio::time::{interval, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::models::{Side, WhaleTradeEvent};
-use crate::polymarket::types::{WsSubscribe, WsTrade};
+use crate::polymarket::types::{WsSubscribe, WsTrade, WsTradeEvent};
 
 const PING_INTERVAL: Duration = Duration::from_secs(25);
 const BASE_RECONNECT_DELAY: Duration = Duration::from_secs(2);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
 
-/// Build a JSON subscribe message for a set of token IDs.
+/// Max assets per subscribe message to avoid oversized frames.
+const SUBSCRIBE_BATCH_SIZE: usize = 100;
+
+/// Build subscribe messages for a set of token IDs.
+/// Polymarket WS format: {"type": "market", "assets_ids": ["id1", "id2", ...]}
+/// We batch into chunks to avoid oversized frames.
 fn build_subscribe_messages(token_ids: &[String]) -> Vec<String> {
+    if token_ids.is_empty() {
+        return vec![];
+    }
+
     token_ids
-        .iter()
-        .filter_map(|token_id| {
-            let sub = WsSubscribe::market_trades(token_id);
+        .chunks(SUBSCRIBE_BATCH_SIZE)
+        .filter_map(|chunk| {
+            let sub = WsSubscribe::market(chunk);
             serde_json::to_string(&sub).ok()
         })
         .collect()
@@ -50,14 +59,16 @@ pub async fn run_ws_listener(
 
                 // Subscribe to initial token list
                 let current_tokens = token_rx.borrow().clone();
-                for msg in build_subscribe_messages(&current_tokens) {
-                    if let Err(e) = write.send(Message::Text(msg.into())).await {
+                let msgs = build_subscribe_messages(&current_tokens);
+                for msg in &msgs {
+                    if let Err(e) = write.send(Message::Text(msg.clone().into())).await {
                         tracing::error!(error = %e, "Failed to send subscribe message");
                         break;
                     }
                 }
                 tracing::info!(
                     token_count = current_tokens.len(),
+                    batches = msgs.len(),
                     "Subscribed to initial token list"
                 );
 
@@ -104,12 +115,14 @@ pub async fn run_ws_listener(
                                 break;
                             }
                             let new_tokens = token_rx.borrow().clone();
+                            let msgs = build_subscribe_messages(&new_tokens);
                             tracing::info!(
                                 token_count = new_tokens.len(),
+                                batches = msgs.len(),
                                 "Received updated token list — resubscribing"
                             );
-                            for msg in build_subscribe_messages(&new_tokens) {
-                                if let Err(e) = write.send(Message::Text(msg.into())).await {
+                            for msg in &msgs {
+                                if let Err(e) = write.send(Message::Text(msg.clone().into())).await {
                                     tracing::error!(error = %e, "Failed to send subscribe message");
                                     break;
                                 }
@@ -132,12 +145,38 @@ pub async fn run_ws_listener(
     }
 }
 
-/// Parse an incoming text message, which may be:
-/// - A JSON array of trades: `[{...}, {...}]`
-/// - A single trade object: `{...}`
-/// - A wrapper with a `data` field: `{"data": [{...}]}`
+/// Parse an incoming text message. Polymarket WS sends:
+/// - Trade events: `{"event_type": "last_trade_price", "asset_id": "...", ...}`
+/// - Book events: `{"event_type": "book", ...}`
+/// - Price changes: `{"event_type": "price_change", ...}`
+/// - Legacy format: `[{...}, ...]` arrays of trades
 async fn handle_text_message(text: &str, tx: &mpsc::Sender<WhaleTradeEvent>) {
-    let trades = parse_trades(text);
+    // Try the new Polymarket WS event format first
+    if let Ok(event) = serde_json::from_str::<WsTradeEvent>(text) {
+        if event.event_type.as_deref() == Some("last_trade_price") {
+            if let Some(trade_event) = convert_ws_trade_event(&event) {
+                tracing::info!(
+                    market = %trade_event.market_id,
+                    side = %trade_event.side,
+                    size = %trade_event.size,
+                    price = %trade_event.price,
+                    notional = %trade_event.notional,
+                    "Trade detected"
+                );
+                if let Err(e) = tx.send(trade_event).await {
+                    tracing::error!(error = %e, "Failed to send WhaleTradeEvent to channel");
+                }
+            }
+            return;
+        }
+        // Non-trade events (book, price_change) — skip silently
+        if event.event_type.is_some() {
+            return;
+        }
+    }
+
+    // Fallback: try legacy formats
+    let trades = parse_trades_legacy(text);
     if trades.is_empty() {
         return;
     }
@@ -152,7 +191,7 @@ async fn handle_text_message(text: &str, tx: &mpsc::Sender<WhaleTradeEvent>) {
                     size = %event.size,
                     price = %event.price,
                     notional = %event.notional,
-                    "Trade detected"
+                    "Trade detected (legacy)"
                 );
                 if let Err(e) = tx.send(event).await {
                     tracing::error!(error = %e, "Failed to send WhaleTradeEvent to channel");
@@ -165,7 +204,57 @@ async fn handle_text_message(text: &str, tx: &mpsc::Sender<WhaleTradeEvent>) {
     }
 }
 
-fn parse_trades(text: &str) -> Vec<WsTrade> {
+/// Convert new-format WS trade event to WhaleTradeEvent.
+/// Note: `last_trade_price` events don't include wallet addresses — we use
+/// "ws_anonymous" as placeholder since the pipeline will upsert/track by wallet.
+fn convert_ws_trade_event(event: &WsTradeEvent) -> Option<WhaleTradeEvent> {
+    let side_str = event.side.as_deref()?;
+    let side = Side::from_api_str(side_str)?;
+
+    let asset_id = event.asset_id.as_deref().unwrap_or("unknown");
+    let market_id = event.market.as_deref().unwrap_or("unknown");
+
+    let size = event
+        .size
+        .as_deref()
+        .and_then(|s| Decimal::from_str(s).ok())
+        .unwrap_or(Decimal::ZERO);
+
+    let price = event
+        .price
+        .as_deref()
+        .and_then(|s| Decimal::from_str(s).ok())
+        .unwrap_or(Decimal::ZERO);
+
+    let notional = size * price;
+
+    let timestamp = event
+        .timestamp
+        .as_deref()
+        .and_then(|t| {
+            // Polymarket sends millisecond timestamps
+            if let Ok(ms) = t.parse::<i64>() {
+                return chrono::DateTime::from_timestamp(ms / 1000, ((ms % 1000) * 1_000_000) as u32);
+            }
+            chrono::DateTime::parse_from_rfc3339(t)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
+        .unwrap_or_else(Utc::now);
+
+    Some(WhaleTradeEvent {
+        wallet: "ws_anonymous".to_string(),
+        market_id: market_id.to_string(),
+        asset_id: asset_id.to_string(),
+        side,
+        size,
+        price,
+        notional,
+        timestamp,
+    })
+}
+
+fn parse_trades_legacy(text: &str) -> Vec<WsTrade> {
     // Try as array of trades
     if let Ok(trades) = serde_json::from_str::<Vec<WsTrade>>(text) {
         return trades;

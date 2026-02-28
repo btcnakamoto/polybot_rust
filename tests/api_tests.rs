@@ -52,6 +52,7 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
             whale_seeder_enabled: false,
             whale_seeder_skip_top_n: 10,
             whale_seeder_min_trades: 100,
+            whale_poller_interval_secs: 60,
             default_stop_loss_pct: rust_decimal::Decimal::new(1500, 2),
             default_take_profit_pct: rust_decimal::Decimal::new(5000, 2),
             position_monitor_interval_secs: 30,

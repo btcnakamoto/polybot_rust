@@ -263,27 +263,59 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Position monitor disabled (no Polymarket auth credentials)");
     }
 
-    // --- Data pipeline: WS ingestion → intelligence → execution ---
-    let (ws_tx, mut ws_rx) = tokio::sync::mpsc::channel::<WhaleTradeEvent>(1000);
+    // --- Data pipeline: ingestion → intelligence → execution ---
+    let (trade_tx, mut trade_rx) = tokio::sync::mpsc::channel::<WhaleTradeEvent>(1000);
 
+    // WebSocket listener for market price awareness
     if !initial_tokens.is_empty() || config.market_discovery_enabled {
         let ws_url = config.polymarket_ws_url.clone();
+        let ws_trade_tx = trade_tx.clone();
         tracing::info!(
             initial_tokens = initial_tokens.len(),
             market_discovery = config.market_discovery_enabled,
             "Starting WebSocket listener"
         );
         tokio::spawn(async move {
-            run_ws_listener(ws_url, token_rx, ws_tx).await;
+            run_ws_listener(ws_url, token_rx, ws_trade_tx).await;
         });
+    } else {
+        tracing::warn!("No token IDs and market discovery disabled — WebSocket listener will not start");
+    }
 
-        // Pipeline consumer: intelligence + signal emission
+    // Whale trade poller — primary mechanism for detecting tracked whale trades
+    // (WS events don't include wallet addresses, so we poll the Data API)
+    {
+        let poller_data_client = DataClient::new(reqwest::Client::new());
+        let poller_db = db.clone();
+        let poller_tx = trade_tx.clone();
+        let poller_interval = config.whale_poller_interval_secs;
+
+        tokio::spawn(async move {
+            services::whale_trade_poller::run_whale_trade_poller(
+                poller_data_client,
+                poller_db,
+                poller_tx,
+                poller_interval,
+            )
+            .await;
+        });
+        tracing::info!(
+            interval = config.whale_poller_interval_secs,
+            "Whale trade poller spawned"
+        );
+    }
+
+    // Drop the original sender so the pipeline shuts down when all senders are done
+    drop(trade_tx);
+
+    // Pipeline consumer: intelligence + signal emission
+    {
         let pipeline_db = db.clone();
         let copy_enabled = config.copy_enabled;
         let pipeline_notifier = notifier.clone();
         tokio::spawn(async move {
             let signal_sender = if copy_enabled { Some(&signal_tx) } else { None };
-            while let Some(event) = ws_rx.recv().await {
+            while let Some(event) = trade_rx.recv().await {
                 tracing::debug!(
                     wallet = %event.wallet,
                     notional = %event.notional,
@@ -304,8 +336,6 @@ async fn main() -> anyhow::Result<()> {
             }
             tracing::warn!("WhaleTradeEvent channel closed");
         });
-    } else {
-        tracing::warn!("No token IDs and market discovery disabled — WebSocket listener will not start");
     }
 
     // --- WebSocket broadcast channel for dashboard ---
