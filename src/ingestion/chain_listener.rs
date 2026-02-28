@@ -362,13 +362,58 @@ fn is_zero_asset(hex: &str) -> bool {
     hex.trim_start_matches('0').is_empty()
 }
 
-/// Format a hex uint256 as a decimal string asset ID.
+/// Convert a 64-char hex uint256 to its full decimal string representation.
+/// ERC-1155 token IDs are 256-bit values that overflow u128, so we use
+/// manual hex-to-decimal conversion via digit-by-digit arithmetic.
 fn format_asset_id(hex: &str) -> String {
-    // Parse as u128 and convert to decimal string — this matches the DB format
-    match u128::from_str_radix(hex.trim_start_matches('0'), 16) {
-        Ok(v) => v.to_string(),
-        Err(_) => hex.to_string(),
+    let hex = hex.trim_start_matches('0');
+    if hex.is_empty() {
+        return "0".to_string();
     }
+
+    // Try u128 first (fast path for small values)
+    if hex.len() <= 32 {
+        if let Ok(v) = u128::from_str_radix(hex, 16) {
+            return v.to_string();
+        }
+    }
+
+    // Full uint256: accumulate decimal digits from hex
+    let mut digits: Vec<u8> = vec![0];
+    for ch in hex.chars() {
+        let hex_digit = match ch {
+            '0'..='9' => ch as u8 - b'0',
+            'a'..='f' => ch as u8 - b'a' + 10,
+            'A'..='F' => ch as u8 - b'A' + 10,
+            _ => return hex.to_string(),
+        };
+
+        // Multiply current decimal number by 16
+        let mut carry: u16 = 0;
+        for d in digits.iter_mut().rev() {
+            let val = *d as u16 * 16 + carry;
+            *d = (val % 10) as u8;
+            carry = val / 10;
+        }
+        while carry > 0 {
+            digits.insert(0, (carry % 10) as u8);
+            carry /= 10;
+        }
+
+        // Add the hex digit
+        carry = hex_digit as u16;
+        for d in digits.iter_mut().rev() {
+            let val = *d as u16 + carry;
+            *d = (val % 10) as u8;
+            carry = val / 10;
+        }
+        while carry > 0 {
+            digits.insert(0, (carry % 10) as u8);
+            carry /= 10;
+        }
+    }
+
+    digits.iter().map(|d| (d + b'0') as char).collect()
 }
 
 /// Safe division that returns ZERO on divide-by-zero.
@@ -424,9 +469,28 @@ mod tests {
     }
 
     #[test]
-    fn test_format_asset_id() {
+    fn test_format_asset_id_small() {
         let hex = "0000000000000000000000000000000000000000000000000000000002faf080";
         assert_eq!(format_asset_id(hex), "50000000");
+    }
+
+    #[test]
+    fn test_format_asset_id_uint256() {
+        // Real Polymarket CLOB token ID that overflows u128
+        let hex = "7581b394f5a4dd19ec46e4ff36baa3a841c9eeb80af0f0850be552c0fece2d87";
+        let result = format_asset_id(hex);
+        assert_eq!(
+            result,
+            "53149765984136093709083310870325314268796238675098813080656099381431327665543"
+        );
+        // Verify it's a large decimal string (not hex fallback)
+        assert!(result.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn test_format_asset_id_zero() {
+        let hex = "0000000000000000000000000000000000000000000000000000000000000000";
+        assert_eq!(format_asset_id(hex), "0");
     }
 
     #[test]
