@@ -22,16 +22,15 @@ pub async fn setup_test_db() -> PgPool {
         .await
         .expect("Failed to run migrations");
 
-    // Clean tables for test isolation
-    sqlx::query("DELETE FROM consensus_signals").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM basket_wallets").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM whale_baskets").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM positions").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM copy_orders").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM whale_trades").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM market_outcomes").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM active_markets").execute(&pool).await.ok();
-    sqlx::query("DELETE FROM whales").execute(&pool).await.ok();
+    // Clean tables for test isolation — use TRUNCATE CASCADE to avoid FK
+    // violations when parallel tests interleave cleanup and inserts.
+    sqlx::query(
+        "TRUNCATE consensus_signals, basket_wallets, whale_baskets, positions, \
+         copy_orders, whale_trades, market_outcomes, active_markets, whales CASCADE"
+    )
+    .execute(&pool)
+    .await
+    .ok();
 
     pool
 }
