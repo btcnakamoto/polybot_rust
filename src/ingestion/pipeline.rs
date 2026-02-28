@@ -84,12 +84,6 @@ pub async fn process_trade_event(
 
     counter!("trade_events_total").increment(1);
 
-    // Notify whale alert
-    if let Some(n) = notifier {
-        let msg = crate::services::notifier::format_whale_alert(event);
-        n.send(&msg).await;
-    }
-
     // Step 2: Upsert whale
     let whale = whale_repo::upsert_whale(pool, &event.wallet).await?;
 
@@ -393,6 +387,17 @@ pub async fn process_trade_event(
                     market = %event.market_id,
                     "CopySignal emitted to execution layer"
                 );
+
+                // Notify copy signal via Telegram
+                if let Some(n) = notifier {
+                    let msg = crate::services::notifier::format_copy_signal(
+                        event,
+                        score.win_rate,
+                        score.kelly_fraction,
+                        ev_copy,
+                    );
+                    n.send(&msg).await;
+                }
             }
         }
     }

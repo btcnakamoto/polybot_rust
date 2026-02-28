@@ -49,8 +49,13 @@ impl Notifier {
     }
 }
 
-/// Format a whale trade alert message.
-pub fn format_whale_alert(event: &WhaleTradeEvent) -> String {
+/// Format a copy signal notification — only sent when all gates pass.
+pub fn format_copy_signal(
+    event: &WhaleTradeEvent,
+    win_rate: Decimal,
+    kelly: Decimal,
+    ev_copy: Decimal,
+) -> String {
     let wallet_short = if event.wallet.len() > 10 {
         format!("{}...{}", &event.wallet[..6], &event.wallet[event.wallet.len()-4..])
     } else {
@@ -58,12 +63,14 @@ pub fn format_whale_alert(event: &WhaleTradeEvent) -> String {
     };
 
     format!(
-        "*Whale Alert*\nWallet: `{}`\nSide: {}\nSize: {} @ {}\nNotional: {} USDC\nMarket: `{}`",
+        "*Copy Signal*\nWallet: `{}`\nSide: {}\nNotional: ${} USDC\nPrice: {}\nWin Rate: {}%\nKelly: {}\nEV (adj): ${}\nMarket: `{}`",
         wallet_short,
         event.side,
-        event.size,
+        event.notional.round_dp(2),
         event.price,
-        event.notional,
+        (win_rate * Decimal::ONE_HUNDRED).round_dp(1),
+        kelly.round_dp(4),
+        ev_copy.round_dp(2),
         &event.market_id[..16.min(event.market_id.len())],
     )
 }
