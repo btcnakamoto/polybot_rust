@@ -114,9 +114,28 @@ pub async fn process_trade_event(
     // Step 4: Fetch trade history and re-score
     let all_trades = trade_repo::get_trades_by_whale(pool, whale.id).await?;
 
-    // Classify wallet
-    let classification = classify_wallet(&all_trades);
-    whale_repo::update_whale_classification(pool, whale.id, classification.as_str()).await?;
+    // Seeder-tier classifications indicate leaderboard-vetted whales.
+    // Don't override with pipeline re-classification (avoids false bot/MM).
+    const SEEDER_TIERS: &[&str] = &["top_tier", "high_performer", "profitable"];
+    let is_seeder_vetted = whale
+        .classification
+        .as_deref()
+        .map(|c| SEEDER_TIERS.contains(&c))
+        .unwrap_or(false);
+
+    // Classify wallet — preserve seeder classifications
+    let classification = if is_seeder_vetted {
+        tracing::debug!(
+            wallet = %event.wallet,
+            existing = ?whale.classification,
+            "Seeder-vetted whale — preserving classification as Informed"
+        );
+        Classification::Informed
+    } else {
+        let c = classify_wallet(&all_trades);
+        whale_repo::update_whale_classification(pool, whale.id, c.as_str()).await?;
+        c
+    };
 
     // Score wallet — use real market outcomes when available
     let trade_results: Vec<TradeResult> = {
@@ -260,13 +279,18 @@ pub async fn process_trade_event(
         Decimal::from(score.total_trades)
     };
 
-    let admission = check_admission(
-        score.win_rate,
-        Some(classification.as_str()),
-        months_active,
-        score.total_trades,
-        avg_monthly_trades,
-    );
+    let admission = if is_seeder_vetted {
+        tracing::info!(wallet = %event.wallet, "Seeder-vetted whale — bypassing admission");
+        AdmissionResult::Accepted
+    } else {
+        check_admission(
+            score.win_rate,
+            Some(classification.as_str()),
+            months_active,
+            score.total_trades,
+            avg_monthly_trades,
+        )
+    };
 
     let admitted = matches!(admission, AdmissionResult::Accepted);
     if !admitted {
