@@ -1,3 +1,5 @@
+pub mod order_repo;
+pub mod position_repo;
 pub mod trade_repo;
 pub mod whale_repo;
 
