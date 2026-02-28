@@ -19,6 +19,11 @@ pub struct AppConfig {
     pub polymarket_ws_url: String,
     pub ws_subscribe_token_ids: Vec<String>,
 
+    // Wallet & execution
+    pub private_key: Option<String>,
+    pub polygon_rpc_url: String,
+    pub dry_run: bool,
+
     // Execution
     pub copy_strategy: String,
     pub bankroll: Decimal,
@@ -36,6 +41,20 @@ pub struct AppConfig {
     pub basket_min_wallets: i32,
     pub basket_max_wallets: i32,
     pub basket_enabled: bool,
+
+    // Market discovery
+    pub market_discovery_enabled: bool,
+    pub market_discovery_interval_secs: u64,
+    pub market_min_volume: Decimal,
+    pub market_min_liquidity: Decimal,
+
+    // Whale seeder
+    pub whale_seeder_enabled: bool,
+
+    // Exit strategy (SL/TP)
+    pub default_stop_loss_pct: Decimal,
+    pub default_take_profit_pct: Decimal,
+    pub position_monitor_interval_secs: u64,
 }
 
 impl AppConfig {
@@ -63,6 +82,14 @@ impl AppConfig {
             polymarket_ws_url: env::var("POLYMARKET_WS_URL")
                 .unwrap_or_else(|_| DEFAULT_WS_URL.into()),
             ws_subscribe_token_ids,
+
+            private_key: env::var("PRIVATE_KEY").ok(),
+            polygon_rpc_url: env::var("RPC_URL")
+                .unwrap_or_else(|_| "https://polygon-rpc.com".into()),
+            dry_run: env::var("DRY_RUN")
+                .unwrap_or_else(|_| "true".into())
+                .parse()
+                .unwrap_or(true),
 
             copy_strategy: env::var("COPY_STRATEGY").unwrap_or_else(|_| "fixed".into()),
             bankroll: env::var("BANKROLL")
@@ -105,7 +132,47 @@ impl AppConfig {
                 .unwrap_or_else(|_| "false".into())
                 .parse()
                 .unwrap_or(false),
+
+            market_discovery_enabled: env::var("MARKET_DISCOVERY_ENABLED")
+                .unwrap_or_else(|_| "false".into())
+                .parse()
+                .unwrap_or(false),
+            market_discovery_interval_secs: env::var("MARKET_DISCOVERY_INTERVAL")
+                .unwrap_or_else(|_| "300".into())
+                .parse()
+                .unwrap_or(300),
+            market_min_volume: env::var("MARKET_MIN_VOLUME")
+                .unwrap_or_else(|_| "10000".into())
+                .parse()
+                .unwrap_or(Decimal::from(10_000)),
+            market_min_liquidity: env::var("MARKET_MIN_LIQUIDITY")
+                .unwrap_or_else(|_| "5000".into())
+                .parse()
+                .unwrap_or(Decimal::from(5_000)),
+
+            whale_seeder_enabled: env::var("WHALE_SEEDER_ENABLED")
+                .unwrap_or_else(|_| "true".into())
+                .parse()
+                .unwrap_or(true),
+
+            default_stop_loss_pct: env::var("STOP_LOSS_PCT")
+                .unwrap_or_else(|_| "15.0".into())
+                .parse()
+                .unwrap_or(Decimal::new(1500, 2)),
+            default_take_profit_pct: env::var("TAKE_PROFIT_PCT")
+                .unwrap_or_else(|_| "50.0".into())
+                .parse()
+                .unwrap_or(Decimal::new(5000, 2)),
+            position_monitor_interval_secs: env::var("POSITION_MONITOR_INTERVAL")
+                .unwrap_or_else(|_| "30".into())
+                .parse()
+                .unwrap_or(30),
         })
+    }
+
+    /// Returns true if a private key is configured for on-chain signing.
+    pub fn has_private_key(&self) -> bool {
+        self.private_key.is_some()
     }
 
     /// Returns true if all Polymarket API credentials are configured.

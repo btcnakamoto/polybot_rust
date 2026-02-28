@@ -19,4 +19,9 @@ pub struct Position {
     pub opened_at: Option<DateTime<Utc>>,
     pub closed_at: Option<DateTime<Utc>>,
     pub realized_pnl: Option<Decimal>,
+    pub stop_loss_pct: Option<Decimal>,
+    pub take_profit_pct: Option<Decimal>,
+    pub last_price_update: Option<DateTime<Utc>>,
+    pub exit_reason: Option<String>,
+    pub exited_at: Option<DateTime<Utc>>,
 }

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use metrics::counter;
@@ -7,6 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::db::{order_repo, position_repo};
 use crate::models::CopySignal;
+use crate::polymarket::balance::BalanceChecker;
 use crate::services::notifier::Notifier;
 
 use super::order_executor::OrderExecutor;
@@ -20,6 +22,9 @@ pub struct CopyEngineConfig {
     pub bankroll: Decimal,
     pub base_amount: Decimal,
     pub risk_limits: RiskLimits,
+    pub dry_run: bool,
+    pub default_stop_loss_pct: Decimal,
+    pub default_take_profit_pct: Decimal,
 }
 
 impl Default for CopyEngineConfig {
@@ -29,6 +34,9 @@ impl Default for CopyEngineConfig {
             bankroll: Decimal::from(1_000),
             base_amount: Decimal::from(50),
             risk_limits: RiskLimits::default(),
+            dry_run: true,
+            default_stop_loss_pct: Decimal::new(1500, 2),  // 15.00%
+            default_take_profit_pct: Decimal::new(5000, 2), // 50.00%
         }
     }
 }
@@ -40,14 +48,27 @@ pub async fn run_copy_engine(
     executor: OrderExecutor,
     config: CopyEngineConfig,
     notifier: Option<Arc<Notifier>>,
+    balance_checker: Option<BalanceChecker>,
+    pause_flag: Arc<AtomicBool>,
 ) {
     tracing::info!(
         strategy = %config.strategy,
         bankroll = %config.bankroll,
+        dry_run = config.dry_run,
         "Copy engine started"
     );
 
     while let Some(signal) = rx.recv().await {
+        // Check pause flag
+        if pause_flag.load(Ordering::Relaxed) {
+            tracing::info!(
+                wallet = %signal.wallet,
+                market = %signal.market_id,
+                "Copy engine paused — skipping signal"
+            );
+            continue;
+        }
+
         tracing::info!(
             wallet = %signal.wallet,
             market = %signal.market_id,
@@ -56,7 +77,16 @@ pub async fn run_copy_engine(
             "Processing copy signal"
         );
 
-        if let Err(e) = process_signal(&signal, &pool, &executor, &config, notifier.as_deref()).await {
+        if let Err(e) = process_signal(
+            &signal,
+            &pool,
+            &executor,
+            &config,
+            notifier.as_deref(),
+            balance_checker.as_ref(),
+        )
+        .await
+        {
             tracing::error!(
                 error = %e,
                 wallet = %signal.wallet,
@@ -75,6 +105,7 @@ async fn process_signal(
     executor: &OrderExecutor,
     config: &CopyEngineConfig,
     notifier: Option<&Notifier>,
+    balance_checker: Option<&BalanceChecker>,
 ) -> anyhow::Result<()> {
     // 1. Calculate position size
     let signal_strength = signal.whale_win_rate; // Use win rate as signal strength
@@ -98,6 +129,50 @@ async fn process_signal(
         size = %size,
         "Position sized"
     );
+
+    // 1b. Balance pre-check (only when not dry-run and checker available)
+    if !config.dry_run {
+        if let Some(checker) = balance_checker {
+            let side_str = signal.side.to_string();
+            match side_str.as_str() {
+                "BUY" => {
+                    let required = size * signal.price;
+                    match checker.get_usdc_balance().await {
+                        Ok(usdc) if usdc < required => {
+                            tracing::warn!(
+                                required = %required,
+                                available = %usdc,
+                                "Insufficient USDC balance — skipping order"
+                            );
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to check USDC balance, proceeding anyway");
+                        }
+                        _ => {}
+                    }
+                }
+                "SELL" => {
+                    match checker.get_token_balance(&signal.asset_id).await {
+                        Ok(token_bal) if token_bal < size => {
+                            tracing::warn!(
+                                required = %size,
+                                available = %token_bal,
+                                token_id = %signal.asset_id,
+                                "Insufficient token balance — skipping order"
+                            );
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to check token balance, proceeding anyway");
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 
     // 2. Build portfolio snapshot for risk check
     let open_positions = position_repo::count_open_positions(pool).await.unwrap_or(0);
@@ -153,6 +228,7 @@ async fn process_signal(
                 order_id = %order.id,
                 fill_price = %result.fill_price,
                 slippage = %result.slippage,
+                clob_order_id = ?result.order_id,
                 "Order executed successfully"
             );
 
@@ -167,7 +243,7 @@ async fn process_signal(
                 crate::models::Side::Sell => "No",
             };
 
-            position_repo::upsert_position(
+            let position = position_repo::upsert_position(
                 pool,
                 &signal.market_id,
                 &signal.asset_id,
@@ -176,6 +252,18 @@ async fn process_signal(
                 result.fill_price,
             )
             .await?;
+
+            // Set SL/TP on the position
+            if let Err(e) = position_repo::set_position_sl_tp(
+                pool,
+                position.id,
+                config.default_stop_loss_pct,
+                config.default_take_profit_pct,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "Failed to set SL/TP on position");
+            }
 
             tracing::info!(order_id = %order.id, "Position updated");
 

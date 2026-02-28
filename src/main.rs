@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -11,7 +12,10 @@ use polybot::execution::risk_manager::RiskLimits;
 use polybot::ingestion::pipeline::process_trade_event;
 use polybot::ingestion::ws_listener::run_ws_listener;
 use polybot::models::{CopySignal, WhaleTradeEvent};
-use polybot::polymarket::{ClobClient, DataClient, PolymarketAuth};
+use polybot::polymarket::{
+    BalanceChecker, ClobClient, DataClient, GammaClient, PolymarketAuth, PolymarketWallet,
+    TradingClient,
+};
 use polybot::services::notifier::Notifier;
 use polybot::{db, metrics, services, AppState};
 
@@ -44,6 +48,62 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // --- Global pause flag ---
+    let pause_flag = Arc::new(AtomicBool::new(false));
+
+    // --- Wallet & trading client initialization ---
+    let wallet: Option<Arc<PolymarketWallet>>;
+    let trading_client: Option<Arc<TradingClient>>;
+    let balance_checker: Option<Arc<BalanceChecker>>;
+
+    if config.has_private_key() {
+        let pk = config.private_key.as_ref().unwrap();
+        match PolymarketWallet::new(pk).await {
+            Ok(w) => {
+                let w = Arc::new(w);
+                tracing::info!(
+                    address = %w.wallet_address(),
+                    "Wallet initialized"
+                );
+
+                let tc = TradingClient::new(Arc::clone(&w));
+                let bc = BalanceChecker::new(Arc::clone(&w));
+
+                // Query and log USDC balance at startup
+                match bc.get_usdc_balance().await {
+                    Ok(usdc) => tracing::info!(balance = %usdc, "USDC balance"),
+                    Err(e) => tracing::warn!(error = %e, "Failed to query USDC balance at startup"),
+                }
+
+                trading_client = Some(Arc::new(tc));
+                balance_checker = Some(Arc::new(bc));
+                wallet = Some(w);
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to initialize wallet — falling back to monitor-only mode");
+                wallet = None;
+                trading_client = None;
+                balance_checker = None;
+            }
+        }
+    } else {
+        tracing::warn!("No private key — running in monitor-only mode");
+        wallet = None;
+        trading_client = None;
+        balance_checker = None;
+    };
+
+    // --- Whale seeder (one-shot, runs before market discovery) ---
+    if config.whale_seeder_enabled {
+        let data_client = DataClient::new(reqwest::Client::new());
+        match services::whale_seeder::run_whale_seeder(&data_client, &db, &config).await {
+            Ok(()) => tracing::info!("Whale seeder completed"),
+            Err(e) => tracing::warn!(error = %e, "Whale seeder failed (non-fatal)"),
+        }
+    } else {
+        tracing::info!("Whale seeder disabled (WHALE_SEEDER_ENABLED=false)");
+    }
+
     // --- Market resolution poller ---
     {
         let poller_db = db.clone();
@@ -67,23 +127,52 @@ async fn main() -> anyhow::Result<()> {
             );
             Some(ClobClient::new(reqwest::Client::new(), auth))
         } else {
-            tracing::warn!("No Polymarket API credentials — copy engine will run in dry-run mode");
+            tracing::warn!("No Polymarket API credentials — orderbook slippage checks disabled");
             None
         };
+
+        let dry_run = config.dry_run || trading_client.is_none();
+        if dry_run {
+            tracing::info!("Copy engine running in DRY-RUN mode");
+        } else {
+            tracing::info!("Copy engine running in LIVE mode");
+        }
 
         let engine_config = CopyEngineConfig {
             strategy: SizingStrategy::parse_strategy(&config.copy_strategy),
             bankroll: config.bankroll,
             base_amount: config.base_copy_amount,
             risk_limits: RiskLimits::default(),
+            dry_run,
+            default_stop_loss_pct: config.default_stop_loss_pct,
+            default_take_profit_pct: config.default_take_profit_pct,
         };
 
-        let executor = OrderExecutor::new(clob_client, RiskLimits::default());
+        // Build OrderExecutor with optional TradingClient for live execution
+        let executor_trading = wallet.as_ref().map(|w| TradingClient::new(Arc::clone(w)));
+        let executor = OrderExecutor::new(
+            executor_trading,
+            clob_client,
+            RiskLimits::default(),
+            dry_run,
+        );
+
         let engine_db = db.clone();
         let engine_notifier = notifier.clone();
+        let engine_balance = wallet.as_ref().map(|w| BalanceChecker::new(Arc::clone(w)));
+        let engine_pause = Arc::clone(&pause_flag);
 
         tokio::spawn(async move {
-            copy_engine::run_copy_engine(signal_rx, engine_db, executor, engine_config, engine_notifier).await;
+            copy_engine::run_copy_engine(
+                signal_rx,
+                engine_db,
+                executor,
+                engine_config,
+                engine_notifier,
+                engine_balance,
+                engine_pause,
+            )
+            .await;
         });
 
         tracing::info!(
@@ -97,20 +186,84 @@ async fn main() -> anyhow::Result<()> {
         drop(signal_rx);
     }
 
+    // --- Watch channel for dynamic token subscription ---
+    let initial_tokens = config.ws_subscribe_token_ids.clone();
+    let (token_tx, token_rx) = tokio::sync::watch::channel(initial_tokens.clone());
+
+    // --- Market discovery ---
+    if config.market_discovery_enabled {
+        let gamma_client = GammaClient::new();
+        let discovery_db = db.clone();
+        let discovery_interval = config.market_discovery_interval_secs;
+        let min_volume = config.market_min_volume;
+        let min_liquidity = config.market_min_liquidity;
+
+        tokio::spawn(async move {
+            services::market_discovery::run_market_discovery(
+                gamma_client,
+                token_tx,
+                discovery_db,
+                discovery_interval,
+                min_volume,
+                min_liquidity,
+            )
+            .await;
+        });
+        tracing::info!(
+            interval = config.market_discovery_interval_secs,
+            "Market discovery spawned"
+        );
+    } else {
+        tracing::info!("Market discovery disabled (MARKET_DISCOVERY_ENABLED=false)");
+    }
+
+    // --- Position monitor (SL/TP) ---
+    if config.has_polymarket_auth() {
+        let auth = PolymarketAuth::new(
+            config.polymarket_api_key.clone().unwrap(),
+            config.polymarket_api_secret.clone().unwrap(),
+            config.polymarket_passphrase.clone().unwrap(),
+        );
+        let monitor_clob = ClobClient::new(reqwest::Client::new(), auth);
+        let monitor_db = db.clone();
+        let monitor_tc = trading_client.clone();
+        let monitor_dry = config.dry_run || trading_client.is_none();
+        let monitor_pause = Arc::clone(&pause_flag);
+        let monitor_interval = config.position_monitor_interval_secs;
+        let monitor_notifier = notifier.clone();
+
+        tokio::spawn(async move {
+            services::position_monitor::run_position_monitor(
+                monitor_db,
+                monitor_clob,
+                monitor_tc,
+                monitor_dry,
+                monitor_pause,
+                monitor_interval,
+                monitor_notifier,
+            )
+            .await;
+        });
+        tracing::info!(
+            interval = config.position_monitor_interval_secs,
+            "Position monitor spawned (SL/TP)"
+        );
+    } else {
+        tracing::info!("Position monitor disabled (no Polymarket auth credentials)");
+    }
+
     // --- Data pipeline: WS ingestion → intelligence → execution ---
     let (ws_tx, mut ws_rx) = tokio::sync::mpsc::channel::<WhaleTradeEvent>(1000);
 
-    if config.ws_subscribe_token_ids.is_empty() {
-        tracing::warn!("WS_SUBSCRIBE_TOKEN_IDS is empty — WebSocket listener will not start");
-    } else {
+    if !initial_tokens.is_empty() || config.market_discovery_enabled {
         let ws_url = config.polymarket_ws_url.clone();
-        let token_ids = config.ws_subscribe_token_ids.clone();
         tracing::info!(
-            token_count = token_ids.len(),
+            initial_tokens = initial_tokens.len(),
+            market_discovery = config.market_discovery_enabled,
             "Starting WebSocket listener"
         );
         tokio::spawn(async move {
-            run_ws_listener(ws_url, token_ids, ws_tx).await;
+            run_ws_listener(ws_url, token_rx, ws_tx).await;
         });
 
         // Pipeline consumer: intelligence + signal emission
@@ -140,6 +293,8 @@ async fn main() -> anyhow::Result<()> {
             }
             tracing::warn!("WhaleTradeEvent channel closed");
         });
+    } else {
+        tracing::warn!("No token IDs and market discovery disabled — WebSocket listener will not start");
     }
 
     // --- WebSocket broadcast channel for dashboard ---
@@ -151,6 +306,10 @@ async fn main() -> anyhow::Result<()> {
         ws_tx: ws_broadcast_tx,
         metrics_handle,
         notifier,
+        wallet,
+        trading_client,
+        balance_checker,
+        pause_flag,
     };
     let router = create_router(state);
 

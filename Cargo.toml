@@ -33,10 +33,16 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # WebSocket
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
+
+# Polymarket SDK (EIP-712 signing + CLOB order placement)
+polymarket-client-sdk = { version = "0.4", features = ["clob"] }
+
+# Alloy types (for PrivateKeySigner type alias used with the SDK)
+alloy = { version = "1.6", features = ["signers", "signer-local"] }
 futures-util = "0.3"
 
 # HMAC signing

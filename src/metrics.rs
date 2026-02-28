@@ -4,11 +4,21 @@ use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 /// Install the Prometheus exporter and register all application metrics.
 /// Returns a `PrometheusHandle` whose `render()` method produces the
 /// text/plain Prometheus scrape payload.
+///
+/// Safe to call multiple times (e.g. in tests) — subsequent calls return a
+/// new handle but silently ignore the global recorder installation error.
 pub fn init_metrics() -> PrometheusHandle {
     let builder = PrometheusBuilder::new();
-    let handle = builder
-        .install_recorder()
-        .expect("failed to install Prometheus recorder");
+    let handle = match builder.install_recorder() {
+        Ok(h) => h,
+        Err(_) => {
+            // Recorder already installed (happens in tests). Build a standalone
+            // handle that still works for rendering.
+            PrometheusBuilder::new()
+                .build_recorder()
+                .handle()
+        }
+    };
 
     // Pre-register counters so they appear even before the first increment.
     counter!("trade_events_total").absolute(0);

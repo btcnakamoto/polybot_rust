@@ -125,3 +125,74 @@ pub async fn get_daily_realized_pnl(pool: &PgPool) -> anyhow::Result<Decimal> {
 
     Ok(row.0.unwrap_or(Decimal::ZERO))
 }
+
+/// Update the current price and last_price_update timestamp for a position.
+pub async fn update_position_price(
+    pool: &PgPool,
+    position_id: uuid::Uuid,
+    current_price: Decimal,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET current_price = $2, last_price_update = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(current_price)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Close a position with realized PnL and an exit reason (stop_loss / take_profit).
+pub async fn close_position_with_reason(
+    pool: &PgPool,
+    position_id: uuid::Uuid,
+    realized_pnl: Decimal,
+    exit_reason: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET status = 'closed',
+            realized_pnl = $2,
+            closed_at = NOW(),
+            exit_reason = $3,
+            exited_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(realized_pnl)
+    .bind(exit_reason)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Set stop-loss and take-profit percentages for a position.
+pub async fn set_position_sl_tp(
+    pool: &PgPool,
+    position_id: uuid::Uuid,
+    stop_loss_pct: Decimal,
+    take_profit_pct: Decimal,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET stop_loss_pct = $2, take_profit_pct = $3
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(stop_loss_pct)
+    .bind(take_profit_pct)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}

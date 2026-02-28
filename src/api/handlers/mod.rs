@@ -1,4 +1,5 @@
 pub mod baskets;
+pub mod control;
 pub mod dashboard;
 pub mod health;
 pub mod metrics;

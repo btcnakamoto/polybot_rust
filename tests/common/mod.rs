@@ -30,6 +30,7 @@ pub async fn setup_test_db() -> PgPool {
     sqlx::query("DELETE FROM copy_orders").execute(&pool).await.ok();
     sqlx::query("DELETE FROM whale_trades").execute(&pool).await.ok();
     sqlx::query("DELETE FROM market_outcomes").execute(&pool).await.ok();
+    sqlx::query("DELETE FROM active_markets").execute(&pool).await.ok();
     sqlx::query("DELETE FROM whales").execute(&pool).await.ok();
 
     pool

@@ -1,4 +1,6 @@
+use rust_decimal::Decimal;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::types::{ApiMarket, ApiTrade};
@@ -12,6 +14,38 @@ pub enum DataClientError {
 
     #[error("unexpected response: {0}")]
     Unexpected(String),
+}
+
+/// A single entry from the Polymarket leaderboard.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LeaderboardEntry {
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(default)]
+    pub volume: Option<Decimal>,
+    #[serde(default)]
+    pub pnl: Option<Decimal>,
+    #[serde(default, alias = "markets_traded")]
+    pub markets_traded: Option<i32>,
+    #[serde(default)]
+    pub rank: Option<u32>,
+}
+
+/// A single trade from the user trades endpoint.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UserTrade {
+    #[serde(default)]
+    pub token_id: Option<String>,
+    #[serde(default)]
+    pub side: Option<String>,
+    #[serde(default)]
+    pub size: Option<Decimal>,
+    #[serde(default)]
+    pub price: Option<Decimal>,
+    #[serde(default)]
+    pub timestamp: Option<String>,
+    #[serde(default)]
+    pub market: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,5 +106,48 @@ impl DataClient {
 
         let markets: Vec<ApiMarket> = resp.json().await?;
         Ok(markets)
+    }
+
+    /// Fetch leaderboard entries from the Polymarket data API.
+    pub async fn get_leaderboard(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<LeaderboardEntry>, DataClientError> {
+        let url = format!("{}/leaderboard", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[
+                ("limit", limit.to_string()),
+                ("window", "all".into()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let entries: Vec<LeaderboardEntry> = resp.json().await?;
+        Ok(entries)
+    }
+
+    /// Fetch recent trades for a specific user address.
+    pub async fn get_user_trades(
+        &self,
+        address: &str,
+        limit: u32,
+    ) -> Result<Vec<UserTrade>, DataClientError> {
+        let url = format!("{}/trades", self.base_url);
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[
+                ("user", address.to_string()),
+                ("limit", limit.to_string()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let trades: Vec<UserTrade> = resp.json().await?;
+        Ok(trades)
     }
 }

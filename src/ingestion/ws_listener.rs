@@ -3,7 +3,7 @@ use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{interval, sleep};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
@@ -14,14 +14,29 @@ const PING_INTERVAL: Duration = Duration::from_secs(25);
 const BASE_RECONNECT_DELAY: Duration = Duration::from_secs(2);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(60);
 
-/// Run the WebSocket listener loop. This function never returns under normal
-/// operation — it reconnects automatically on disconnection.
+/// Build a JSON subscribe message for a set of token IDs.
+fn build_subscribe_messages(token_ids: &[String]) -> Vec<String> {
+    token_ids
+        .iter()
+        .filter_map(|token_id| {
+            let sub = WsSubscribe::market_trades(token_id);
+            serde_json::to_string(&sub).ok()
+        })
+        .collect()
+}
+
+/// Run the WebSocket listener loop with dynamic token subscription updates.
+///
+/// `token_rx` is a `watch::Receiver` that emits updated token ID lists
+/// from the market discovery service. When new tokens arrive, the listener
+/// sends fresh subscribe messages on the existing connection.
 pub async fn run_ws_listener(
     ws_url: String,
-    token_ids: Vec<String>,
+    token_rx: watch::Receiver<Vec<String>>,
     tx: mpsc::Sender<WhaleTradeEvent>,
 ) {
     let mut attempt: u32 = 0;
+    let mut token_rx = token_rx;
 
     loop {
         tracing::info!(url = %ws_url, "Connecting to Polymarket WebSocket...");
@@ -33,22 +48,18 @@ pub async fn run_ws_listener(
 
                 let (mut write, mut read) = ws_stream.split();
 
-                // Subscribe to each token_id
-                for token_id in &token_ids {
-                    let sub = WsSubscribe::market_trades(token_id);
-                    match serde_json::to_string(&sub) {
-                        Ok(msg) => {
-                            if let Err(e) = write.send(Message::Text(msg)).await {
-                                tracing::error!(error = %e, "Failed to send subscribe message");
-                                break;
-                            }
-                            tracing::info!(token_id = %token_id, "Subscribed to market trades");
-                        }
-                        Err(e) => {
-                            tracing::error!(error = %e, "Failed to serialize subscribe message");
-                        }
+                // Subscribe to initial token list
+                let current_tokens = token_rx.borrow().clone();
+                for msg in build_subscribe_messages(&current_tokens) {
+                    if let Err(e) = write.send(Message::Text(msg.into())).await {
+                        tracing::error!(error = %e, "Failed to send subscribe message");
+                        break;
                     }
                 }
+                tracing::info!(
+                    token_count = current_tokens.len(),
+                    "Subscribed to initial token list"
+                );
 
                 let mut ping_timer = interval(PING_INTERVAL);
                 ping_timer.tick().await; // consume the first immediate tick
@@ -58,7 +69,7 @@ pub async fn run_ws_listener(
                         msg = read.next() => {
                             match msg {
                                 Some(Ok(Message::Text(text))) => {
-                                    handle_text_message(&text, &tx).await;
+                                    handle_text_message(text.as_ref(), &tx).await;
                                 }
                                 Some(Ok(Message::Ping(data))) => {
                                     if let Err(e) = write.send(Message::Pong(data)).await {
@@ -82,9 +93,26 @@ pub async fn run_ws_listener(
                             }
                         }
                         _ = ping_timer.tick() => {
-                            if let Err(e) = write.send(Message::Ping(vec![])).await {
+                            if let Err(e) = write.send(Message::Ping(vec![].into())).await {
                                 tracing::warn!(error = %e, "Failed to send ping");
                                 break;
+                            }
+                        }
+                        result = token_rx.changed() => {
+                            if result.is_err() {
+                                tracing::warn!("Token watch channel closed");
+                                break;
+                            }
+                            let new_tokens = token_rx.borrow().clone();
+                            tracing::info!(
+                                token_count = new_tokens.len(),
+                                "Received updated token list — resubscribing"
+                            );
+                            for msg in build_subscribe_messages(&new_tokens) {
+                                if let Err(e) = write.send(Message::Text(msg.into())).await {
+                                    tracing::error!(error = %e, "Failed to send subscribe message");
+                                    break;
+                                }
                             }
                         }
                     }
