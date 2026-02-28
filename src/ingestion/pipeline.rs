@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 
 use crate::db::{basket_repo, market_repo, trade_repo, whale_repo};
 use crate::intelligence::basket::{check_admission, check_basket_consensus, AdmissionResult};
-use crate::intelligence::classifier::Classification;
 use crate::intelligence::{classify_wallet, score_wallet};
 use crate::intelligence::scorer::WalletScore;
 use crate::models::{CopySignal, Side, TradeResult, WhaleTradeEvent};
@@ -267,8 +266,12 @@ pub async fn process_trade_event(
         }
     }
 
-    // Step 6: Emit CopySignal if wallet is Informed, active, AND admitted
-    if classification == Classification::Informed && whale.is_active.unwrap_or(true) && admitted {
+    // Step 6: Emit CopySignal if wallet has good scores and is active.
+    // Individual signals are score-gated (not classification-gated) because the
+    // pattern-based classifier can produce false positives on leaderboard wallets
+    // that trade frequently. Basket admission is separate (Step 7).
+    let min_signal_wr = Decimal::new(55, 2); // 55% win rate minimum for individual signals
+    if score.win_rate >= min_signal_wr && whale.is_active.unwrap_or(true) {
         if let Some(tx) = signal_tx {
             let signal = CopySignal {
                 whale_trade_id: trade.id,
