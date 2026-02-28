@@ -35,14 +35,14 @@ pub async fn run_whale_seeder(
         }
     };
 
-    // Filter: positive PnL and enough trading history
+    // Filter: positive PnL and meaningful volume
     let qualified: Vec<_> = entries
         .iter()
         .enumerate()
         .filter(|(_i, entry)| {
             let pnl = entry.pnl.unwrap_or(Decimal::ZERO);
-            let markets = entry.markets_traded.unwrap_or(0);
-            pnl > Decimal::ZERO && markets > 10
+            let vol = entry.volume.unwrap_or(Decimal::ZERO);
+            pnl > Decimal::ZERO && vol > Decimal::from(1_000)
         })
         .collect();
 

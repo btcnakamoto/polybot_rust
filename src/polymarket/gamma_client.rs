@@ -14,23 +14,29 @@ pub enum GammaClientError {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GammaToken {
-    pub token_id: String,
-    pub outcome: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GammaMarket {
+    #[serde(alias = "conditionId")]
     pub condition_id: String,
     pub question: String,
-    #[serde(default)]
-    pub tokens: Vec<GammaToken>,
+    /// Stringified JSON array of token IDs, e.g. "[\"token1\", \"token2\"]"
+    #[serde(default, alias = "clobTokenIds")]
+    pub clob_token_ids: Option<String>,
     #[serde(default)]
     pub volume: Option<String>,
     #[serde(default)]
     pub liquidity: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "endDateIso")]
     pub end_date_iso: Option<String>,
+}
+
+impl GammaMarket {
+    /// Parse the stringified clobTokenIds into a Vec of token ID strings.
+    pub fn parse_token_ids(&self) -> Vec<String> {
+        self.clob_token_ids
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone)]

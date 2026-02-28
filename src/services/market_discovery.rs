@@ -50,9 +50,9 @@ pub async fn run_market_discovery(
 
                         if volume >= min_volume && liquidity >= min_liquidity {
                             markets_found += 1;
-                            for token in &market.tokens {
-                                if !token.token_id.is_empty() {
-                                    all_token_ids.push(token.token_id.clone());
+                            for token_id in market.parse_token_ids() {
+                                if !token_id.is_empty() {
+                                    all_token_ids.push(token_id);
                                 }
                             }
 

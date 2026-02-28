@@ -16,19 +16,19 @@ pub enum DataClientError {
     Unexpected(String),
 }
 
-/// A single entry from the Polymarket leaderboard.
+/// A single entry from the Polymarket leaderboard (/v1/leaderboard).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LeaderboardEntry {
-    #[serde(default)]
+    #[serde(default, alias = "proxyWallet")]
     pub address: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "vol")]
     pub volume: Option<Decimal>,
     #[serde(default)]
     pub pnl: Option<Decimal>,
-    #[serde(default, alias = "markets_traded")]
-    pub markets_traded: Option<i32>,
     #[serde(default)]
-    pub rank: Option<u32>,
+    pub rank: Option<String>,
+    #[serde(default, alias = "userName")]
+    pub user_name: Option<String>,
 }
 
 /// A single trade from the user trades endpoint.
@@ -113,13 +113,14 @@ impl DataClient {
         &self,
         limit: u32,
     ) -> Result<Vec<LeaderboardEntry>, DataClientError> {
-        let url = format!("{}/leaderboard", self.base_url);
+        let url = format!("{}/v1/leaderboard", self.base_url);
         let resp = self
             .http
             .get(&url)
             .query(&[
                 ("limit", limit.to_string()),
-                ("window", "all".into()),
+                ("timePeriod", "ALL".into()),
+                ("orderBy", "PNL".into()),
             ])
             .send()
             .await?
