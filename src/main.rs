@@ -10,6 +10,8 @@ mod polymarket;
 
 use crate::api::router::create_router;
 use crate::config::AppConfig;
+use crate::ingestion::ws_listener::run_ws_listener;
+use crate::models::WhaleTradeEvent;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +30,40 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to database...");
     let db = db::init_pool(&config.database_url).await?;
     tracing::info!("Database connected");
+
+    // --- Phase 1: WebSocket data pipeline ---
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<WhaleTradeEvent>(1000);
+
+    if config.ws_subscribe_token_ids.is_empty() {
+        tracing::warn!("WS_SUBSCRIBE_TOKEN_IDS is empty — WebSocket listener will not start");
+    } else {
+        let ws_url = config.polymarket_ws_url.clone();
+        let token_ids = config.ws_subscribe_token_ids.clone();
+        tracing::info!(
+            token_count = token_ids.len(),
+            "Starting WebSocket listener"
+        );
+        tokio::spawn(async move {
+            run_ws_listener(ws_url, token_ids, tx).await;
+        });
+
+        // Temporary consumer: log events to console (Phase 1 verification)
+        tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                tracing::info!(
+                    wallet = %event.wallet,
+                    market = %event.market_id,
+                    asset_id = %event.asset_id,
+                    side = %event.side,
+                    size = %event.size,
+                    price = %event.price,
+                    notional = %event.notional,
+                    "WhaleTradeEvent received in pipeline"
+                );
+            }
+            tracing::warn!("WhaleTradeEvent channel closed");
+        });
+    }
 
     let state = AppState { db, config };
     let router = create_router(state);

@@ -32,8 +32,19 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
-# --- Phase 1+ dependencies (uncomment when needed) ---
-# reqwest = { version = "0.12", features = ["json"] }
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# WebSocket
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+
+# HMAC signing
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+
+# --- Phase 2+ dependencies (uncomment when needed) ---
 # jsonwebtoken = "9"
 # axum-extra = { version = "0.9", features = ["typed-header"] }
 # ethers = { version = "2", features = ["ws"] }
