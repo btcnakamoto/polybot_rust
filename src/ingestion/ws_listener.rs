@@ -38,7 +38,7 @@ pub async fn run_ws_listener(
                     let sub = WsSubscribe::market_trades(token_id);
                     match serde_json::to_string(&sub) {
                         Ok(msg) => {
-                            if let Err(e) = write.send(Message::Text(msg.into())).await {
+                            if let Err(e) = write.send(Message::Text(msg)).await {
                                 tracing::error!(error = %e, "Failed to send subscribe message");
                                 break;
                             }
@@ -82,7 +82,7 @@ pub async fn run_ws_listener(
                             }
                         }
                         _ = ping_timer.tick() => {
-                            if let Err(e) = write.send(Message::Ping(vec![].into())).await {
+                            if let Err(e) = write.send(Message::Ping(vec![])).await {
                                 tracing::warn!(error = %e, "Failed to send ping");
                                 break;
                             }

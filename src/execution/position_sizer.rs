@@ -11,7 +11,7 @@ pub enum SizingStrategy {
 }
 
 impl SizingStrategy {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_strategy(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "proportional" => SizingStrategy::Proportional,
             "kelly" => SizingStrategy::Kelly,

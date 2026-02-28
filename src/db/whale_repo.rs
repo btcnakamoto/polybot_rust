@@ -46,6 +46,7 @@ pub async fn get_active_whales(pool: &PgPool) -> anyhow::Result<Vec<Whale>> {
 }
 
 /// Update scoring metrics for a whale.
+#[allow(clippy::too_many_arguments)]
 pub async fn update_whale_scores(
     pool: &PgPool,
     whale_id: Uuid,

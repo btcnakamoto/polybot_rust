@@ -27,6 +27,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/baskets/{id}/whales/{whale_id}", delete(handlers::baskets::remove_whale))
         .route("/api/baskets/{id}/consensus", get(handlers::baskets::consensus_history))
         .route("/api/consensus/recent", get(handlers::baskets::recent_consensus))
+        // Metrics
+        .route("/metrics", get(handlers::metrics::render))
         // WebSocket
         .route("/ws", get(handlers::ws::handler))
         // Middleware

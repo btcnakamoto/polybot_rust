@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::models::WhaleTrade;
 
 /// Insert a new whale trade record.
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_trade(
     pool: &PgPool,
     whale_id: Uuid,

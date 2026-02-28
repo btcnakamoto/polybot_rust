@@ -86,6 +86,35 @@ pub async fn count_open_positions(pool: &PgPool) -> anyhow::Result<i64> {
     Ok(row.0)
 }
 
+/// Get all open positions for a specific market.
+pub async fn get_positions_for_market(pool: &PgPool, market_id: &str) -> anyhow::Result<Vec<Position>> {
+    let positions = sqlx::query_as::<_, Position>(
+        "SELECT * FROM positions WHERE market_id = $1 AND status = 'open'",
+    )
+    .bind(market_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(positions)
+}
+
+/// Close a position with realized PnL.
+pub async fn close_position(pool: &PgPool, position_id: uuid::Uuid, realized_pnl: Decimal) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET status = 'closed', realized_pnl = $2, closed_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(realized_pnl)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Get today's realized PnL across all closed positions.
 pub async fn get_daily_realized_pnl(pool: &PgPool) -> anyhow::Result<Decimal> {
     let row: (Option<Decimal>,) = sqlx::query_as(

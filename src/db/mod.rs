@@ -1,4 +1,5 @@
 pub mod basket_repo;
+pub mod market_repo;
 pub mod order_repo;
 pub mod position_repo;
 pub mod trade_repo;

@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
+use metrics::counter;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
 use crate::db::{order_repo, position_repo};
 use crate::models::CopySignal;
+use crate::services::notifier::Notifier;
 
 use super::order_executor::OrderExecutor;
 use super::position_sizer::{self, SizingStrategy};
@@ -35,6 +39,7 @@ pub async fn run_copy_engine(
     pool: PgPool,
     executor: OrderExecutor,
     config: CopyEngineConfig,
+    notifier: Option<Arc<Notifier>>,
 ) {
     tracing::info!(
         strategy = %config.strategy,
@@ -51,7 +56,7 @@ pub async fn run_copy_engine(
             "Processing copy signal"
         );
 
-        if let Err(e) = process_signal(&signal, &pool, &executor, &config).await {
+        if let Err(e) = process_signal(&signal, &pool, &executor, &config, notifier.as_deref()).await {
             tracing::error!(
                 error = %e,
                 wallet = %signal.wallet,
@@ -69,6 +74,7 @@ async fn process_signal(
     pool: &PgPool,
     executor: &OrderExecutor,
     config: &CopyEngineConfig,
+    notifier: Option<&Notifier>,
 ) -> anyhow::Result<()> {
     // 1. Calculate position size
     let signal_strength = signal.whale_win_rate; // Use win rate as signal strength
@@ -150,6 +156,8 @@ async fn process_signal(
                 "Order executed successfully"
             );
 
+            counter!("orders_filled").increment(1);
+
             // Update order as filled
             order_repo::fill_order(pool, order.id, result.fill_price, result.slippage).await?;
 
@@ -170,6 +178,12 @@ async fn process_signal(
             .await?;
 
             tracing::info!(order_id = %order.id, "Position updated");
+
+            // Notify order result
+            if let Some(n) = notifier {
+                let msg = crate::services::notifier::format_order_result(&order, true, None);
+                n.send(&msg).await;
+            }
         }
         Err(e) => {
             let err_msg = e.to_string();
@@ -178,7 +192,15 @@ async fn process_signal(
                 error = %err_msg,
                 "Order execution failed"
             );
+
+            counter!("orders_failed").increment(1);
             order_repo::fail_order(pool, order.id, &err_msg).await?;
+
+            // Notify order failure
+            if let Some(n) = notifier {
+                let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg));
+                n.send(&msg).await;
+            }
         }
     }
 

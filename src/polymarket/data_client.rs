@@ -46,6 +46,20 @@ impl DataClient {
         Ok(trades)
     }
 
+    /// Fetch a single market by condition ID.
+    pub async fn get_market(&self, condition_id: &str) -> Result<ApiMarket, DataClientError> {
+        let url = format!("{}/markets/{}", self.base_url, condition_id);
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let market: ApiMarket = resp.json().await?;
+        Ok(market)
+    }
+
     /// Fetch all active markets.
     pub async fn get_markets(&self) -> Result<Vec<ApiMarket>, DataClientError> {
         let url = format!("{}/markets", self.base_url);

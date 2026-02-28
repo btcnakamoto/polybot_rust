@@ -24,7 +24,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     Ok(ws_msg) => {
                         match serde_json::to_string(&ws_msg) {
                             Ok(json) => {
-                                if socket.send(Message::Text(json.into())).await.is_err() {
+                                if socket.send(Message::Text(json)).await.is_err() {
                                     break;
                                 }
                             }

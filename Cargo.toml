@@ -44,6 +44,10 @@ hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
 
+# Metrics
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+
 # --- Phase 2+ dependencies (uncomment when needed) ---
 # jsonwebtoken = "9"
 # axum-extra = { version = "0.9", features = ["typed-header"] }

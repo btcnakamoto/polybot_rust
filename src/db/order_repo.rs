@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::models::CopyOrder;
 
 /// Insert a new copy order.
+#[allow(clippy::too_many_arguments)]
 pub async fn insert_order(
     pool: &PgPool,
     whale_trade_id: Uuid,

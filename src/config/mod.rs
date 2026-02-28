@@ -25,6 +25,11 @@ pub struct AppConfig {
     pub base_copy_amount: Decimal,
     pub copy_enabled: bool,
 
+    // Telegram notifications
+    pub telegram_bot_token: Option<String>,
+    pub telegram_chat_id: Option<String>,
+    pub notifications_enabled: bool,
+
     // Basket consensus
     pub basket_consensus_threshold: Decimal,
     pub basket_time_window_hours: i32,
@@ -73,6 +78,13 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(false),
 
+            telegram_bot_token: env::var("TELEGRAM_BOT_TOKEN").ok(),
+            telegram_chat_id: env::var("TELEGRAM_CHAT_ID").ok(),
+            notifications_enabled: env::var("NOTIFICATIONS_ENABLED")
+                .unwrap_or_else(|_| "false".into())
+                .parse()
+                .unwrap_or(false),
+
             basket_consensus_threshold: env::var("BASKET_CONSENSUS_THRESHOLD")
                 .unwrap_or_else(|_| "0.80".into())
                 .parse()
@@ -101,5 +113,10 @@ impl AppConfig {
         self.polymarket_api_key.is_some()
             && self.polymarket_api_secret.is_some()
             && self.polymarket_passphrase.is_some()
+    }
+
+    /// Returns true if Telegram bot credentials are configured.
+    pub fn has_telegram(&self) -> bool {
+        self.telegram_bot_token.is_some() && self.telegram_chat_id.is_some()
     }
 }
