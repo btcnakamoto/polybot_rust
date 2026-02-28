@@ -56,6 +56,10 @@ pub struct AppConfig {
     // Whale trade poller
     pub whale_poller_interval_secs: u64,
 
+    // Chain listener (Polygon on-chain OrderFilled events)
+    pub chain_listener_enabled: bool,
+    pub polygon_ws_url: Option<String>,
+
     // Exit strategy (SL/TP)
     pub default_stop_loss_pct: Decimal,
     pub default_take_profit_pct: Decimal,
@@ -172,6 +176,12 @@ impl AppConfig {
                 .unwrap_or_else(|_| "60".into())
                 .parse()
                 .unwrap_or(60),
+
+            chain_listener_enabled: env::var("CHAIN_LISTENER_ENABLED")
+                .unwrap_or_else(|_| "false".into())
+                .parse()
+                .unwrap_or(false),
+            polygon_ws_url: env::var("POLYGON_WS_URL").ok(),
 
             default_stop_loss_pct: env::var("STOP_LOSS_PCT")
                 .unwrap_or_else(|_| "15.0".into())

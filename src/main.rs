@@ -9,6 +9,7 @@ use polybot::execution::copy_engine::{self, CopyEngineConfig};
 use polybot::execution::order_executor::OrderExecutor;
 use polybot::execution::position_sizer::SizingStrategy;
 use polybot::execution::risk_manager::RiskLimits;
+use polybot::ingestion::chain_listener::run_chain_listener;
 use polybot::ingestion::pipeline::process_trade_event;
 use polybot::ingestion::ws_listener::run_ws_listener;
 use polybot::models::{CopySignal, WhaleTradeEvent};
@@ -282,13 +283,32 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("No token IDs and market discovery disabled — WebSocket listener will not start");
     }
 
-    // Whale trade poller — primary mechanism for detecting tracked whale trades
-    // (WS events don't include wallet addresses, so we poll the Data API)
+    // Chain listener — low-latency on-chain OrderFilled event monitoring
+    let chain_listener_active = config.chain_listener_enabled && config.polygon_ws_url.is_some();
+    if chain_listener_active {
+        let chain_ws_url = config.polygon_ws_url.clone().unwrap();
+        let chain_db = db.clone();
+        let chain_tx = trade_tx.clone();
+        tokio::spawn(async move {
+            run_chain_listener(chain_ws_url, chain_db, chain_tx).await;
+        });
+        tracing::info!("Chain listener spawned (Polygon WSS OrderFilled events)");
+    } else if config.chain_listener_enabled {
+        tracing::warn!("Chain listener enabled but POLYGON_WS_URL not set — skipping");
+    }
+
+    // Whale trade poller — fallback/backup mechanism for detecting tracked whale trades
+    // When chain listener is active, increase interval to 300s (catch-up only)
     {
         let poller_data_client = DataClient::new(reqwest::Client::new());
         let poller_db = db.clone();
         let poller_tx = trade_tx.clone();
-        let poller_interval = config.whale_poller_interval_secs;
+        let poller_interval = if chain_listener_active {
+            tracing::info!("Whale poller interval increased to 300s (chain listener active)");
+            300
+        } else {
+            config.whale_poller_interval_secs
+        };
 
         tokio::spawn(async move {
             services::whale_trade_poller::run_whale_trade_poller(
@@ -300,7 +320,7 @@ async fn main() -> anyhow::Result<()> {
             .await;
         });
         tracing::info!(
-            interval = config.whale_poller_interval_secs,
+            interval = poller_interval,
             "Whale trade poller spawned"
         );
     }
