@@ -138,16 +138,6 @@ pub async fn run_whale_seeder(
             }
         };
 
-        // Update label via direct query
-        if let Err(e) = sqlx::query("UPDATE whales SET label = $2 WHERE id = $1")
-            .bind(whale.id)
-            .bind(&label)
-            .execute(pool)
-            .await
-        {
-            tracing::warn!(error = %e, "Failed to update whale label");
-        }
-
         // Seed trades from the already-fetched user_trades
         let mut trade_count = 0i32;
         for trade in &user_trades {
@@ -208,20 +198,63 @@ pub async fn run_whale_seeder(
 
         if let Err(e) = sqlx::query(
             r#"UPDATE whales
-               SET total_pnl = $2, total_trades = $3, classification = $4,
-                   category = $5, updated_at = NOW()
+               SET classification = $2, category = $3, label = $4, updated_at = NOW()
                WHERE id = $1"#,
         )
         .bind(whale.id)
-        .bind(pnl)
-        .bind(trade_count)
         .bind(classification)
         .bind(format!("vol:{}", vol.round()))
+        .bind(&label)
         .execute(pool)
         .await
         {
-            tracing::warn!(error = %e, "Failed to update whale stats from leaderboard");
+            tracing::warn!(error = %e, "Failed to update whale classification");
         }
+
+        // Compute and store initial scores from leaderboard aggregate data.
+        // These estimates will be overwritten once real market outcomes resolve.
+        let est_win_rate = if pnl > Decimal::from(100_000) {
+            Decimal::new(68, 2) // 0.68
+        } else if pnl > Decimal::from(10_000) {
+            Decimal::new(63, 2) // 0.63
+        } else {
+            Decimal::new(58, 2) // 0.58
+        };
+        let est_kelly = est_win_rate * Decimal::from(2) - Decimal::ONE; // simplified Kelly
+        let est_ev = if trade_count > 0 {
+            pnl / Decimal::from(trade_count)
+        } else {
+            Decimal::ZERO
+        };
+        let est_sharpe = if vol > Decimal::ZERO {
+            (pnl / vol * Decimal::from(100)).min(Decimal::from(5))
+        } else {
+            Decimal::ONE
+        };
+
+        if let Err(e) = whale_repo::update_whale_scores(
+            pool,
+            whale.id,
+            est_sharpe,
+            est_win_rate,
+            est_kelly,
+            est_ev,
+            trade_count,
+            pnl,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "Failed to update whale scores");
+        }
+
+        tracing::info!(
+            address = %address,
+            win_rate = %est_win_rate,
+            kelly = %est_kelly,
+            total_trades = trade_count,
+            pnl = %pnl,
+            "Seeded whale with estimated scores"
+        );
 
         seeded_count += 1;
     }
