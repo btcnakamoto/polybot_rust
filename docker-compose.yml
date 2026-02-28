@@ -1,38 +1,41 @@
-version: '3.8'
 services:
   polybot:
     build: .
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgres://polybot:password@db:5432/polybot
-      - RUST_LOG=info
-      - HOST=0.0.0.0
-      - PORT=8080
+      - DATABASE_URL=postgres://polybot:${POSTGRES_PASSWORD:-password}@db:5432/polybot
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "80:80"
+    depends_on:
+      - polybot
+    restart: unless-stopped
 
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: polybot
       POSTGRES_USER: polybot
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U polybot"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
 
 volumes:
   pgdata:
