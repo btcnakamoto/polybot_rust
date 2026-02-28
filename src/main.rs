@@ -8,7 +8,10 @@ mod intelligence;
 mod execution;
 mod polymarket;
 
+use tokio::sync::broadcast;
+
 use crate::api::router::create_router;
+use crate::api::ws_types::WsMessage;
 use crate::config::AppConfig;
 use crate::execution::copy_engine::{self, CopyEngineConfig};
 use crate::execution::order_executor::OrderExecutor;
@@ -23,6 +26,7 @@ use crate::polymarket::{ClobClient, PolymarketAuth};
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub config: AppConfig,
+    pub ws_tx: broadcast::Sender<WsMessage>,
 }
 
 #[tokio::main]
@@ -117,7 +121,14 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let state = AppState { db, config };
+    // --- WebSocket broadcast channel for dashboard ---
+    let (ws_broadcast_tx, _) = broadcast::channel::<WsMessage>(256);
+
+    let state = AppState {
+        db,
+        config,
+        ws_tx: ws_broadcast_tx,
+    };
     let router = create_router(state);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
