@@ -11,34 +11,34 @@ export default function Whales() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-white">Tracked Whales</h2>
+      <h2 className="text-xl font-semibold text-white">跟踪巨鲸</h2>
 
       <div className="bg-slate-800 rounded-xl border border-slate-700">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700">
-                <th className="text-left px-4 py-3">Address</th>
-                <th className="text-left px-4 py-3">Classification</th>
-                <th className="text-right px-4 py-3">Sharpe</th>
-                <th className="text-right px-4 py-3">Win Rate</th>
-                <th className="text-right px-4 py-3">Kelly</th>
-                <th className="text-right px-4 py-3">Trades</th>
-                <th className="text-right px-4 py-3">Total PnL</th>
-                <th className="text-left px-4 py-3">Status</th>
+                <th className="text-left px-4 py-3">地址</th>
+                <th className="text-left px-4 py-3">分类</th>
+                <th className="text-right px-4 py-3">夏普比率</th>
+                <th className="text-right px-4 py-3">胜率</th>
+                <th className="text-right px-4 py-3">凯利系数</th>
+                <th className="text-right px-4 py-3">交易数</th>
+                <th className="text-right px-4 py-3">总盈亏</th>
+                <th className="text-left px-4 py-3">状态</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    Loading...
+                    加载中...
                   </td>
                 </tr>
               ) : (whales ?? []).length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    No tracked whales yet
+                    暂无跟踪巨鲸
                   </td>
                 </tr>
               ) : (

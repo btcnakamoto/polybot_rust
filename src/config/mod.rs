@@ -70,7 +70,8 @@ pub struct AppConfig {
     pub min_resolved_for_signal: i32,
     pub min_signal_win_rate: Decimal,
     pub min_total_trades_for_signal: i32,
-    pub min_signal_notional: Decimal,
+    pub signal_notional_liquidity_pct: Decimal,
+    pub signal_notional_floor: Decimal,
     pub max_signal_notional: Decimal,
     pub min_signal_ev: Decimal,
     pub assumed_slippage_pct: Decimal,
@@ -222,10 +223,14 @@ impl AppConfig {
                 .unwrap_or_else(|_| "100".into())
                 .parse()
                 .unwrap_or(100),
-            min_signal_notional: env::var("MIN_SIGNAL_NOTIONAL")
-                .unwrap_or_else(|_| "50000".into())
+            signal_notional_liquidity_pct: env::var("SIGNAL_NOTIONAL_LIQUIDITY_PCT")
+                .unwrap_or_else(|_| "0.01".into())
                 .parse()
-                .unwrap_or(Decimal::from(50_000)),
+                .unwrap_or(Decimal::new(1, 2)),
+            signal_notional_floor: env::var("SIGNAL_NOTIONAL_FLOOR")
+                .unwrap_or_else(|_| "1000".into())
+                .parse()
+                .unwrap_or(Decimal::from(1_000)),
             max_signal_notional: env::var("MAX_SIGNAL_NOTIONAL")
                 .unwrap_or_else(|_| "500000".into())
                 .parse()

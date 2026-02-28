@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ApiResponse, ConsensusSignal, CopyOrder, DashboardSummary, Position, Whale, WhaleBasket, WhaleTrade } from '../types';
+import type { ApiResponse, ConfigEntry, ConsensusSignal, CopyOrder, DashboardSummary, PerformanceMetrics, PnlDataPoint, Position, Whale, WhaleBasket, WhaleTrade } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -76,4 +76,27 @@ export async function fetchConsensusHistory(basketId: string): Promise<Consensus
 export async function fetchRecentConsensus(): Promise<ConsensusSignal[]> {
   const { data } = await api.get<ApiResponse<ConsensusSignal[]>>('/consensus/recent');
   return data.data ?? [];
+}
+
+// Analytics
+
+export async function fetchPnlHistory(): Promise<PnlDataPoint[]> {
+  const { data } = await api.get<PnlDataPoint[]>('/analytics/pnl-history');
+  return data;
+}
+
+export async function fetchPerformance(): Promise<PerformanceMetrics> {
+  const { data } = await api.get<PerformanceMetrics>('/analytics/performance');
+  return data;
+}
+
+// Config
+
+export async function fetchConfig(): Promise<ConfigEntry[]> {
+  const { data } = await api.get<ConfigEntry[]>('/config');
+  return data;
+}
+
+export async function updateConfig(entries: Record<string, string>): Promise<void> {
+  await api.put('/config', { entries });
 }

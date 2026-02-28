@@ -1,12 +1,14 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Fish, ArrowLeftRight, Briefcase, Layers } from 'lucide-react';
+import { LayoutDashboard, Fish, ArrowLeftRight, Briefcase, Layers, BarChart3, Settings } from 'lucide-react';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/whales', label: 'Whales', icon: Fish },
-  { to: '/trades', label: 'Trades', icon: ArrowLeftRight },
-  { to: '/positions', label: 'Positions', icon: Briefcase },
-  { to: '/baskets', label: 'Baskets', icon: Layers },
+  { to: '/', label: '仪表盘', icon: LayoutDashboard },
+  { to: '/whales', label: '巨鲸', icon: Fish },
+  { to: '/trades', label: '交易', icon: ArrowLeftRight },
+  { to: '/positions', label: '持仓', icon: Briefcase },
+  { to: '/baskets', label: '篮子', icon: Layers },
+  { to: '/analytics', label: '分析', icon: BarChart3 },
+  { to: '/settings', label: '设置', icon: Settings },
 ];
 
 export default function Layout() {
@@ -16,7 +18,7 @@ export default function Layout() {
       <aside className="w-56 bg-slate-950 border-r border-slate-800 flex flex-col">
         <div className="p-4 border-b border-slate-800">
           <h1 className="text-lg font-bold text-white tracking-tight">Polybot</h1>
-          <p className="text-xs text-slate-500">Whale Copy Trader</p>
+          <p className="text-xs text-slate-500">巨鲸跟单机器人</p>
         </div>
         <nav className="flex-1 p-2 space-y-1">
           {navItems.map(({ to, label, icon: Icon }) => (

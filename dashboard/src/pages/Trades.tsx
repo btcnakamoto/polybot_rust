@@ -11,35 +11,35 @@ export default function Trades() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-semibold text-white">Copy Trades</h2>
+      <h2 className="text-xl font-semibold text-white">跟单交易</h2>
 
       <div className="bg-slate-800 rounded-xl border border-slate-700">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700">
-                <th className="text-left px-4 py-3">Market</th>
-                <th className="text-left px-4 py-3">Side</th>
-                <th className="text-right px-4 py-3">Size</th>
-                <th className="text-right px-4 py-3">Target Price</th>
-                <th className="text-right px-4 py-3">Fill Price</th>
-                <th className="text-right px-4 py-3">Slippage</th>
-                <th className="text-left px-4 py-3">Strategy</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-left px-4 py-3">Placed At</th>
+                <th className="text-left px-4 py-3">市场</th>
+                <th className="text-left px-4 py-3">方向</th>
+                <th className="text-right px-4 py-3">数量</th>
+                <th className="text-right px-4 py-3">目标价格</th>
+                <th className="text-right px-4 py-3">成交价格</th>
+                <th className="text-right px-4 py-3">滑点</th>
+                <th className="text-left px-4 py-3">策略</th>
+                <th className="text-left px-4 py-3">状态</th>
+                <th className="text-left px-4 py-3">下单时间</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                    Loading...
+                    加载中...
                   </td>
                 </tr>
               ) : (trades ?? []).length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                    No copy trades yet
+                    暂无跟单交易
                   </td>
                 </tr>
               ) : (

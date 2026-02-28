@@ -95,6 +95,28 @@ export interface ConsensusSignal {
   triggered_at: string;
 }
 
+export interface PnlDataPoint {
+  date: string;
+  daily_pnl: string;
+  cumulative_pnl: string;
+}
+
+export interface PerformanceMetrics {
+  total_trades: number;
+  win_count: number;
+  loss_count: number;
+  win_rate: string;
+  total_profit: string;
+  avg_profit_per_trade: string;
+  best_trade: string;
+  worst_trade: string;
+}
+
+export interface ConfigEntry {
+  key: string;
+  value: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;

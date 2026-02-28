@@ -11,7 +11,7 @@ use polybot::execution::order_executor::OrderExecutor;
 use polybot::execution::position_sizer::SizingStrategy;
 use polybot::execution::risk_manager::RiskLimits;
 use polybot::ingestion::chain_listener::run_chain_listener;
-use polybot::ingestion::pipeline::{process_trade_event, PipelineConfig};
+use polybot::ingestion::pipeline::{apply_runtime_overrides, process_trade_event, PipelineConfig};
 use polybot::ingestion::ws_listener::run_ws_listener;
 use polybot::models::{CopySignal, WhaleTradeEvent};
 use std::collections::HashMap;
@@ -340,7 +340,8 @@ async fn main() -> anyhow::Result<()> {
             min_signal_win_rate: config.min_signal_win_rate,
             min_resolved_for_signal: config.min_resolved_for_signal,
             min_total_trades_for_signal: config.min_total_trades_for_signal,
-            min_signal_notional: config.min_signal_notional,
+            signal_notional_liquidity_pct: config.signal_notional_liquidity_pct,
+            signal_notional_floor: config.signal_notional_floor,
             max_signal_notional: config.max_signal_notional,
             min_signal_ev: config.min_signal_ev,
             assumed_slippage_pct: config.assumed_slippage_pct,
@@ -355,12 +356,13 @@ async fn main() -> anyhow::Result<()> {
                     notional = %event.notional,
                     "WhaleTradeEvent received in pipeline"
                 );
+                let effective_config = apply_runtime_overrides(&pipeline_config, &pipeline_db).await;
                 if let Err(e) = process_trade_event(
                     &event,
                     &pipeline_db,
                     signal_sender,
                     pipeline_notifier.as_deref(),
-                    &pipeline_config,
+                    &effective_config,
                     &dedup_state,
                 ).await {
                     tracing::error!(

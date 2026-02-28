@@ -27,6 +27,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/baskets/{id}/whales/{whale_id}", delete(handlers::baskets::remove_whale))
         .route("/api/baskets/{id}/consensus", get(handlers::baskets::consensus_history))
         .route("/api/consensus/recent", get(handlers::baskets::recent_consensus))
+        // Analytics
+        .route("/api/analytics/pnl-history", get(handlers::analytics::pnl_history))
+        .route("/api/analytics/performance", get(handlers::analytics::performance))
+        // Config
+        .route("/api/config", get(handlers::config::get_config).put(handlers::config::update_config))
         // Control
         .route("/api/control/stop", post(handlers::control::stop))
         .route("/api/control/resume", post(handlers::control::resume))

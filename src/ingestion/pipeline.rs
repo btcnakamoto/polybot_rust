@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::db::{basket_repo, market_repo, trade_repo, whale_repo};
+use crate::db::{basket_repo, config_repo, market_repo, trade_repo, whale_repo};
 use crate::intelligence::basket::{check_admission, check_basket_consensus, AdmissionResult};
 use crate::intelligence::classifier::Classification;
 use crate::intelligence::{classify_wallet, score_wallet};
@@ -24,7 +24,8 @@ pub struct PipelineConfig {
     pub min_signal_win_rate: Decimal,
     pub min_resolved_for_signal: i32,
     pub min_total_trades_for_signal: i32,
-    pub min_signal_notional: Decimal,
+    pub signal_notional_liquidity_pct: Decimal,
+    pub signal_notional_floor: Decimal,
     pub max_signal_notional: Decimal,
     pub min_signal_ev: Decimal,
     pub assumed_slippage_pct: Decimal,
@@ -291,6 +292,16 @@ pub async fn process_trade_event(
     let ev_copy = score.expected_value * (Decimal::ONE - config.assumed_slippage_pct);
     let has_sufficient_ev = ev_copy >= config.min_signal_ev;
 
+    // Dynamic notional gate: threshold = max(liquidity × pct, floor)
+    let market_liquidity = market_repo::get_market_liquidity(pool, &event.market_id)
+        .await
+        .ok()
+        .flatten();
+    let dynamic_min_notional = market_liquidity
+        .map(|liq| (liq * config.signal_notional_liquidity_pct).max(config.signal_notional_floor))
+        .unwrap_or(config.signal_notional_floor);
+    let notional_above_min = event.notional >= dynamic_min_notional;
+
     if !is_valid_classification {
         tracing::info!(
             wallet = %event.wallet,
@@ -316,14 +327,15 @@ pub async fn process_trade_event(
             effective_total_trades,
             config.min_total_trades_for_signal
         );
-    } else if event.notional < config.min_signal_notional {
+    } else if !notional_above_min {
         tracing::info!(
             wallet = %event.wallet,
             notional = %event.notional,
-            min = %config.min_signal_notional,
-            "Signal blocked: notional ${} below ${} minimum",
+            dynamic_min = %dynamic_min_notional,
+            liquidity = ?market_liquidity,
+            "Signal blocked: notional ${} below dynamic minimum ${}",
             event.notional,
-            config.min_signal_notional
+            dynamic_min_notional
         );
     } else if event.notional > config.max_signal_notional {
         tracing::info!(
@@ -500,4 +512,46 @@ pub async fn process_trade_event(
     histogram!("pipeline_latency_seconds").record(elapsed);
 
     Ok(())
+}
+
+/// Apply runtime config overrides from the database on top of the base config.
+pub async fn apply_runtime_overrides(base: &PipelineConfig, pool: &PgPool) -> PipelineConfig {
+    let mut cfg = base.clone();
+
+    let entries = match config_repo::get_all_config(pool).await {
+        Ok(e) => e,
+        Err(_) => return cfg,
+    };
+
+    for entry in entries {
+        match entry.key.as_str() {
+            "min_signal_win_rate" => {
+                if let Ok(v) = entry.value.parse() { cfg.min_signal_win_rate = v; }
+            }
+            "min_total_trades_for_signal" => {
+                if let Ok(v) = entry.value.parse() { cfg.min_total_trades_for_signal = v; }
+            }
+            "min_signal_ev" => {
+                if let Ok(v) = entry.value.parse() { cfg.min_signal_ev = v; }
+            }
+            "assumed_slippage_pct" => {
+                if let Ok(v) = entry.value.parse() { cfg.assumed_slippage_pct = v; }
+            }
+            "signal_notional_liquidity_pct" => {
+                if let Ok(v) = entry.value.parse() { cfg.signal_notional_liquidity_pct = v; }
+            }
+            "signal_notional_floor" => {
+                if let Ok(v) = entry.value.parse() { cfg.signal_notional_floor = v; }
+            }
+            "max_signal_notional" => {
+                if let Ok(v) = entry.value.parse() { cfg.max_signal_notional = v; }
+            }
+            "tracked_whale_min_notional" => {
+                if let Ok(v) = entry.value.parse() { cfg.tracked_whale_min_notional = v; }
+            }
+            _ => {}
+        }
+    }
+
+    cfg
 }

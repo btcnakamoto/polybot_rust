@@ -1,4 +1,5 @@
 use chrono::Utc;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::models::MarketOutcome;
@@ -56,6 +57,18 @@ pub async fn get_unresolved_markets(pool: &PgPool) -> anyhow::Result<Vec<MarketO
     .await?;
 
     Ok(rows)
+}
+
+/// Get liquidity for a market by condition_id from active_markets table.
+pub async fn get_market_liquidity(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<Decimal>> {
+    let row: Option<(Decimal,)> = sqlx::query_as(
+        "SELECT liquidity FROM active_markets WHERE condition_id = $1",
+    )
+    .bind(condition_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| r.0))
 }
 
 /// Get a single market outcome by market_id.

@@ -33,12 +33,12 @@ export default function Baskets() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-white">Whale Baskets</h2>
+        <h2 className="text-xl font-semibold text-white">巨鲸篮子</h2>
         <button
           onClick={() => setShowCreate(!showCreate)}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors"
         >
-          {showCreate ? 'Cancel' : 'New Basket'}
+          {showCreate ? '取消' : '新建篮子'}
         </button>
       </div>
 
@@ -47,24 +47,24 @@ export default function Baskets() {
         <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 space-y-3">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Name</label>
+              <label className="block text-xs text-slate-400 mb-1">名称</label>
               <input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white"
-                placeholder="e.g. US Politics Whales"
+                placeholder="例如：美国政治巨鲸"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Category</label>
+              <label className="block text-xs text-slate-400 mb-1">分类</label>
               <select
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white"
               >
-                <option value="politics">Politics</option>
-                <option value="crypto">Crypto</option>
-                <option value="sports">Sports</option>
+                <option value="politics">政治</option>
+                <option value="crypto">加密货币</option>
+                <option value="sports">体育</option>
               </select>
             </div>
           </div>
@@ -73,7 +73,7 @@ export default function Baskets() {
             disabled={!form.name || createMutation.isPending}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
           >
-            {createMutation.isPending ? 'Creating...' : 'Create Basket'}
+            {createMutation.isPending ? '创建中...' : '创建篮子'}
           </button>
         </div>
       )}
@@ -84,12 +84,12 @@ export default function Baskets() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700">
-                <th className="text-left px-4 py-2">Name</th>
-                <th className="text-left px-4 py-2">Category</th>
-                <th className="text-right px-4 py-2">Wallets</th>
-                <th className="text-right px-4 py-2">Threshold</th>
-                <th className="text-right px-4 py-2">Window</th>
-                <th className="text-left px-4 py-2">Status</th>
+                <th className="text-left px-4 py-2">名称</th>
+                <th className="text-left px-4 py-2">分类</th>
+                <th className="text-right px-4 py-2">钱包数</th>
+                <th className="text-right px-4 py-2">共识阈值</th>
+                <th className="text-right px-4 py-2">时间窗口</th>
+                <th className="text-left px-4 py-2">状态</th>
                 <th className="text-left px-4 py-2"></th>
               </tr>
             </thead>
@@ -97,7 +97,7 @@ export default function Baskets() {
               {(baskets ?? []).length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                    No baskets created yet
+                    暂无篮子
                   </td>
                 </tr>
               ) : (
@@ -170,10 +170,10 @@ function BasketRow({
               {/* Members */}
               <div>
                 <h4 className="text-xs font-medium text-slate-400 uppercase mb-2">
-                  Members ({whales?.length ?? 0})
+                  成员 ({whales?.length ?? 0})
                 </h4>
                 {(whales ?? []).length === 0 ? (
-                  <p className="text-xs text-slate-500">No whales in this basket</p>
+                  <p className="text-xs text-slate-500">篮子中暂无巨鲸</p>
                 ) : (
                   <ul className="space-y-1">
                     {whales!.map((w: Whale) => (
@@ -182,7 +182,7 @@ function BasketRow({
                           {w.address.slice(0, 10)}...{w.address.slice(-6)}
                         </span>
                         <span className="text-emerald-400">
-                          WR {(Number(w.win_rate ?? 0) * 100).toFixed(1)}%
+                          胜率 {(Number(w.win_rate ?? 0) * 100).toFixed(1)}%
                         </span>
                       </li>
                     ))}
@@ -193,10 +193,10 @@ function BasketRow({
               {/* Consensus history */}
               <div>
                 <h4 className="text-xs font-medium text-slate-400 uppercase mb-2">
-                  Recent Consensus ({signals?.length ?? 0})
+                  近期共识 ({signals?.length ?? 0})
                 </h4>
                 {(signals ?? []).length === 0 ? (
-                  <p className="text-xs text-slate-500">No consensus signals yet</p>
+                  <p className="text-xs text-slate-500">暂无共识信号</p>
                 ) : (
                   <ul className="space-y-1">
                     {signals!.slice(0, 5).map((s: ConsensusSignal) => (
