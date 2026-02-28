@@ -24,6 +24,13 @@ pub struct AppConfig {
     pub bankroll: Decimal,
     pub base_copy_amount: Decimal,
     pub copy_enabled: bool,
+
+    // Basket consensus
+    pub basket_consensus_threshold: Decimal,
+    pub basket_time_window_hours: i32,
+    pub basket_min_wallets: i32,
+    pub basket_max_wallets: i32,
+    pub basket_enabled: bool,
 }
 
 impl AppConfig {
@@ -62,6 +69,27 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(Decimal::from(50)),
             copy_enabled: env::var("COPY_ENABLED")
+                .unwrap_or_else(|_| "false".into())
+                .parse()
+                .unwrap_or(false),
+
+            basket_consensus_threshold: env::var("BASKET_CONSENSUS_THRESHOLD")
+                .unwrap_or_else(|_| "0.80".into())
+                .parse()
+                .unwrap_or(Decimal::new(80, 2)),
+            basket_time_window_hours: env::var("BASKET_TIME_WINDOW_HOURS")
+                .unwrap_or_else(|_| "48".into())
+                .parse()
+                .unwrap_or(48),
+            basket_min_wallets: env::var("BASKET_MIN_WALLETS")
+                .unwrap_or_else(|_| "5".into())
+                .parse()
+                .unwrap_or(5),
+            basket_max_wallets: env::var("BASKET_MAX_WALLETS")
+                .unwrap_or_else(|_| "10".into())
+                .parse()
+                .unwrap_or(10),
+            basket_enabled: env::var("BASKET_ENABLED")
                 .unwrap_or_else(|_| "false".into())
                 .parse()
                 .unwrap_or(false),

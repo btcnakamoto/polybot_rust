@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Whales from './pages/Whales';
 import Trades from './pages/Trades';
 import Positions from './pages/Positions';
+import Baskets from './pages/Baskets';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="whales" element={<Whales />} />
             <Route path="trades" element={<Trades />} />
             <Route path="positions" element={<Positions />} />
+            <Route path="baskets" element={<Baskets />} />
           </Route>
         </Routes>
       </BrowserRouter>

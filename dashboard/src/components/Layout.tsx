@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Fish, ArrowLeftRight, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Fish, ArrowLeftRight, Briefcase, Layers } from 'lucide-react';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/whales', label: 'Whales', icon: Fish },
   { to: '/trades', label: 'Trades', icon: ArrowLeftRight },
   { to: '/positions', label: 'Positions', icon: Briefcase },
+  { to: '/baskets', label: 'Baskets', icon: Layers },
 ];
 
 export default function Layout() {

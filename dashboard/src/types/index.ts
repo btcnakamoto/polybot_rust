@@ -67,6 +67,32 @@ export interface DashboardSummary {
   total_pnl: string;
   today_pnl: string;
   open_positions: number;
+  active_baskets: number;
+  recent_consensus_count: number;
+}
+
+export interface WhaleBasket {
+  id: string;
+  name: string;
+  category: string;
+  consensus_threshold: string;
+  time_window_hours: number;
+  min_wallets: number;
+  max_wallets: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConsensusSignal {
+  id: string;
+  basket_id: string;
+  market_id: string;
+  direction: string;
+  consensus_pct: string;
+  participating_whales: number;
+  total_whales: number;
+  triggered_at: string;
 }
 
 export interface ApiResponse<T> {

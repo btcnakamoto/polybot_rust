@@ -17,10 +17,24 @@ pub enum WsMessage {
 
     #[serde(rename = "pnl_update")]
     PnlUpdate(PnlSnapshot),
+
+    #[serde(rename = "consensus_alert")]
+    ConsensusAlert(ConsensusAlertData),
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PnlSnapshot {
     pub total_pnl: String,
     pub today_pnl: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConsensusAlertData {
+    pub basket_name: String,
+    pub category: String,
+    pub market_id: String,
+    pub direction: String,
+    pub consensus_pct: String,
+    pub participating_whales: i32,
+    pub total_whales: i32,
 }

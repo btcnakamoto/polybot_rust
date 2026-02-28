@@ -21,7 +21,7 @@ export default function Dashboard() {
       <h2 className="text-xl font-semibold text-white">Dashboard</h2>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard label="Tracked Whales" value={summary?.tracked_whales ?? 0} />
         <StatCard label="Open Positions" value={summary?.open_positions ?? 0} />
         <StatCard
@@ -32,6 +32,8 @@ export default function Dashboard() {
           label="Today PnL"
           value={`$${Number(summary?.today_pnl ?? 0).toFixed(2)}`}
         />
+        <StatCard label="Active Baskets" value={summary?.active_baskets ?? 0} />
+        <StatCard label="Consensus 24h" value={summary?.recent_consensus_count ?? 0} />
       </div>
 
       {/* Open positions table */}

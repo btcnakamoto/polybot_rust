@@ -2,10 +2,11 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
-use crate::db::{trade_repo, whale_repo};
+use crate::db::{basket_repo, trade_repo, whale_repo};
+use crate::intelligence::basket::check_basket_consensus;
 use crate::intelligence::classifier::Classification;
 use crate::intelligence::{classify_wallet, score_wallet};
-use crate::models::{CopySignal, TradeResult, WhaleTradeEvent};
+use crate::models::{CopySignal, Side, TradeResult, WhaleTradeEvent};
 
 /// Minimum notional value (in USDC) to consider a trade whale-grade.
 const WHALE_NOTIONAL_THRESHOLD: i64 = 10_000;
@@ -148,6 +149,79 @@ pub async fn process_trade_event(
                     market = %event.market_id,
                     "CopySignal emitted to execution layer"
                 );
+            }
+        }
+    }
+
+    // Step 6: Basket consensus check
+    // For each basket this whale belongs to, evaluate consensus
+    if let Ok(baskets) = basket_repo::get_baskets_for_whale(pool, whale.id).await {
+        for basket in &baskets {
+            match check_basket_consensus(pool, basket, &event.market_id, event.price).await {
+                Ok(check) => {
+                    if check.reached {
+                        tracing::info!(
+                            basket = %basket.name,
+                            market = %event.market_id,
+                            direction = %check.direction,
+                            pct = %check.consensus_pct,
+                            participants = check.participating,
+                            total = check.total,
+                            "Basket consensus reached"
+                        );
+
+                        // Record consensus signal
+                        if let Err(e) = basket_repo::record_consensus_signal(
+                            pool,
+                            basket.id,
+                            &event.market_id,
+                            &check.direction,
+                            check.consensus_pct,
+                            check.participating,
+                            check.total,
+                        )
+                        .await
+                        {
+                            tracing::error!(error = %e, "Failed to record consensus signal");
+                        }
+
+                        // Emit enhanced CopySignal from basket
+                        if let Some(tx) = signal_tx {
+                            let side = Side::from_api_str(&check.direction)
+                                .unwrap_or(Side::Buy);
+
+                            let basket_signal = CopySignal {
+                                whale_trade_id: trade.id,
+                                wallet: format!("basket:{}", basket.name),
+                                market_id: event.market_id.clone(),
+                                asset_id: event.asset_id.clone(),
+                                side,
+                                price: event.price,
+                                whale_win_rate: score.win_rate,
+                                whale_kelly: score.kelly_fraction,
+                                whale_notional: event.notional,
+                            };
+
+                            if let Err(e) = tx.send(basket_signal).await {
+                                tracing::error!(error = %e, "Failed to send basket CopySignal");
+                            }
+                        }
+                    } else {
+                        tracing::debug!(
+                            basket = %basket.name,
+                            market = %event.market_id,
+                            reason = %check.reason,
+                            "Basket consensus not reached"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        basket = %basket.name,
+                        "Failed to check basket consensus"
+                    );
+                }
             }
         }
     }

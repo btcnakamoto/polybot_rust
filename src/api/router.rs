@@ -1,4 +1,5 @@
-use axum::{routing::get, Router};
+use axum::routing::{delete, get};
+use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -19,6 +20,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/trades", get(handlers::trades::list))
         // Positions
         .route("/api/positions", get(handlers::positions::list))
+        // Baskets
+        .route("/api/baskets", get(handlers::baskets::list).post(handlers::baskets::create))
+        .route("/api/baskets/{id}", get(handlers::baskets::detail))
+        .route("/api/baskets/{id}/whales", get(handlers::baskets::whales).post(handlers::baskets::add_whale))
+        .route("/api/baskets/{id}/whales/{whale_id}", delete(handlers::baskets::remove_whale))
+        .route("/api/baskets/{id}/consensus", get(handlers::baskets::consensus_history))
+        .route("/api/consensus/recent", get(handlers::baskets::recent_consensus))
         // WebSocket
         .route("/ws", get(handlers::ws::handler))
         // Middleware

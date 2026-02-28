@@ -1,9 +1,11 @@
+pub mod basket;
 pub mod order;
 pub mod position;
 pub mod signal;
 pub mod trade;
 pub mod whale;
 
+pub use basket::{BasketCategory, BasketWallet, ConsensusSignal, WhaleBasket};
 pub use order::CopyOrder;
 pub use position::Position;
 pub use signal::CopySignal;
