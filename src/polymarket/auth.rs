@@ -1,4 +1,7 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD as BASE64, URL_SAFE as BASE64_URL_SAFE},
+    Engine,
+};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use thiserror::Error;
@@ -41,7 +44,10 @@ impl PolymarketAuth {
         path: &str,
         body: &str,
     ) -> Result<String, AuthError> {
-        let secret_bytes = BASE64.decode(&self.api_secret)?;
+        // Polymarket API secrets use URL-safe base64 (with - and _)
+        let secret_bytes = BASE64_URL_SAFE
+            .decode(&self.api_secret)
+            .or_else(|_| BASE64.decode(&self.api_secret))?;
 
         let message = format!("{timestamp}{method}{path}{body}");
 
