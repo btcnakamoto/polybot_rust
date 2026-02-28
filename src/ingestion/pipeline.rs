@@ -13,8 +13,12 @@ use crate::intelligence::scorer::WalletScore;
 use crate::models::{CopySignal, Side, TradeResult, WhaleTradeEvent};
 use crate::services::notifier::Notifier;
 
-/// Minimum notional value (in USDC) to consider a trade whale-grade.
+/// Minimum notional value (in USDC) to consider a trade from an UNKNOWN wallet.
 const WHALE_NOTIONAL_THRESHOLD: i64 = 10_000;
+
+/// Minimum notional for trades from TRACKED (already-verified) whales.
+/// Much lower since we've already validated these wallets via the seeder.
+const TRACKED_WHALE_MIN_NOTIONAL: i64 = 10;
 
 /// Process a single WhaleTradeEvent through the intelligence pipeline:
 /// 1. Filter by notional threshold
@@ -31,14 +35,28 @@ pub async fn process_trade_event(
     notifier: Option<&Notifier>,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
-    let threshold = Decimal::from(WHALE_NOTIONAL_THRESHOLD);
 
     // Step 1: Filter by notional value
+    // Use lower threshold for already-tracked whales (from seeder/poller)
+    let is_tracked = whale_repo::get_whale_by_address(pool, &event.wallet)
+        .await
+        .ok()
+        .flatten()
+        .map(|w| w.is_active.unwrap_or(false))
+        .unwrap_or(false);
+
+    let threshold = if is_tracked {
+        Decimal::from(TRACKED_WHALE_MIN_NOTIONAL)
+    } else {
+        Decimal::from(WHALE_NOTIONAL_THRESHOLD)
+    };
+
     if event.notional < threshold {
         tracing::debug!(
             wallet = %event.wallet,
             notional = %event.notional,
-            "Trade below whale threshold, skipping"
+            tracked = is_tracked,
+            "Trade below threshold, skipping"
         );
         return Ok(());
     }
