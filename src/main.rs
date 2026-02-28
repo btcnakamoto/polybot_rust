@@ -14,7 +14,6 @@ use polybot::ingestion::chain_listener::run_chain_listener;
 use polybot::ingestion::pipeline::{process_trade_event, PipelineConfig};
 use polybot::ingestion::ws_listener::run_ws_listener;
 use polybot::models::{CopySignal, WhaleTradeEvent};
-use rust_decimal::Decimal;
 use std::collections::HashMap;
 use polybot::polymarket::{
     BalanceChecker, ClobClient, DataClient, GammaClient, PolymarketAuth, PolymarketWallet,
@@ -338,8 +337,11 @@ async fn main() -> anyhow::Result<()> {
         let pipeline_notifier = notifier.clone();
         let pipeline_config = PipelineConfig {
             tracked_whale_min_notional: config.tracked_whale_min_notional,
-            min_signal_win_rate: Decimal::new(55, 2),
+            min_signal_win_rate: config.min_signal_win_rate,
             min_resolved_for_signal: config.min_resolved_for_signal,
+            min_total_trades_for_signal: config.min_total_trades_for_signal,
+            min_signal_notional: config.min_signal_notional,
+            max_signal_notional: config.max_signal_notional,
             signal_dedup_window_secs: 10,
         };
         let dedup_state = Arc::new(tokio::sync::Mutex::new(HashMap::<String, Instant>::new()));

@@ -59,7 +59,11 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
             default_take_profit_pct: rust_decimal::Decimal::new(5000, 2),
             position_monitor_interval_secs: 30,
             tracked_whale_min_notional: rust_decimal::Decimal::from(500),
-            min_resolved_for_signal: 3,
+            min_resolved_for_signal: 5,
+            min_signal_win_rate: rust_decimal::Decimal::new(60, 2),
+            min_total_trades_for_signal: 50,
+            min_signal_notional: rust_decimal::Decimal::from(50_000),
+            max_signal_notional: rust_decimal::Decimal::from(500_000),
         }
     });
 

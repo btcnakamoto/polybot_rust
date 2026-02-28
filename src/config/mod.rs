@@ -68,6 +68,10 @@ pub struct AppConfig {
     // Pipeline signal quality
     pub tracked_whale_min_notional: Decimal,
     pub min_resolved_for_signal: i32,
+    pub min_signal_win_rate: Decimal,
+    pub min_total_trades_for_signal: i32,
+    pub min_signal_notional: Decimal,
+    pub max_signal_notional: Decimal,
 }
 
 impl AppConfig {
@@ -205,9 +209,25 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(Decimal::from(500)),
             min_resolved_for_signal: env::var("MIN_RESOLVED_FOR_SIGNAL")
-                .unwrap_or_else(|_| "3".into())
+                .unwrap_or_else(|_| "5".into())
                 .parse()
-                .unwrap_or(3),
+                .unwrap_or(5),
+            min_signal_win_rate: env::var("MIN_SIGNAL_WIN_RATE")
+                .unwrap_or_else(|_| "0.60".into())
+                .parse()
+                .unwrap_or(Decimal::new(60, 2)),
+            min_total_trades_for_signal: env::var("MIN_TOTAL_TRADES_FOR_SIGNAL")
+                .unwrap_or_else(|_| "50".into())
+                .parse()
+                .unwrap_or(50),
+            min_signal_notional: env::var("MIN_SIGNAL_NOTIONAL")
+                .unwrap_or_else(|_| "50000".into())
+                .parse()
+                .unwrap_or(Decimal::from(50_000)),
+            max_signal_notional: env::var("MAX_SIGNAL_NOTIONAL")
+                .unwrap_or_else(|_| "500000".into())
+                .parse()
+                .unwrap_or(Decimal::from(500_000)),
         })
     }
 

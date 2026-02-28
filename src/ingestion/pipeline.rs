@@ -23,6 +23,9 @@ pub struct PipelineConfig {
     pub tracked_whale_min_notional: Decimal,
     pub min_signal_win_rate: Decimal,
     pub min_resolved_for_signal: i32,
+    pub min_total_trades_for_signal: i32,
+    pub min_signal_notional: Decimal,
+    pub max_signal_notional: Decimal,
     pub signal_dedup_window_secs: u64,
 }
 
@@ -276,11 +279,17 @@ pub async fn process_trade_event(
         }
     }
 
-    // Step 6: Emit CopySignal if wallet passes classification, validated scores, and win rate gates.
+    // Step 6: Emit CopySignal if wallet passes classification, validated scores,
+    // total trades, notional range, and win rate gates.
     let is_valid_classification = classification != Classification::Bot
         && classification != Classification::MarketMaker;
 
     let has_validated_scores = resolved_count >= config.min_resolved_for_signal;
+
+    // Effective total trades: max of observed trades and seeded/leaderboard total
+    let effective_total_trades = (all_trades.len() as i32).max(score.total_trades);
+
+    let has_enough_total_trades = effective_total_trades >= config.min_total_trades_for_signal;
 
     if !is_valid_classification {
         tracing::info!(
@@ -297,6 +306,33 @@ pub async fn process_trade_event(
             "Signal blocked: only {} resolved trades (need {})",
             resolved_count,
             config.min_resolved_for_signal
+        );
+    } else if !has_enough_total_trades {
+        tracing::info!(
+            wallet = %event.wallet,
+            total_trades = effective_total_trades,
+            required = config.min_total_trades_for_signal,
+            "Signal blocked: only {} total trades (need {})",
+            effective_total_trades,
+            config.min_total_trades_for_signal
+        );
+    } else if event.notional < config.min_signal_notional {
+        tracing::info!(
+            wallet = %event.wallet,
+            notional = %event.notional,
+            min = %config.min_signal_notional,
+            "Signal blocked: notional ${} below ${} minimum",
+            event.notional,
+            config.min_signal_notional
+        );
+    } else if event.notional > config.max_signal_notional {
+        tracing::info!(
+            wallet = %event.wallet,
+            notional = %event.notional,
+            max = %config.max_signal_notional,
+            "Signal blocked: notional ${} above ${} maximum",
+            event.notional,
+            config.max_signal_notional
         );
     } else if score.win_rate >= config.min_signal_win_rate && whale.is_active.unwrap_or(true) {
         // Dedup check: skip if same (wallet, asset_id, side) emitted within window
