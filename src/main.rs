@@ -342,6 +342,8 @@ async fn main() -> anyhow::Result<()> {
             min_total_trades_for_signal: config.min_total_trades_for_signal,
             min_signal_notional: config.min_signal_notional,
             max_signal_notional: config.max_signal_notional,
+            min_signal_ev: config.min_signal_ev,
+            assumed_slippage_pct: config.assumed_slippage_pct,
             signal_dedup_window_secs: 10,
         };
         let dedup_state = Arc::new(tokio::sync::Mutex::new(HashMap::<String, Instant>::new()));

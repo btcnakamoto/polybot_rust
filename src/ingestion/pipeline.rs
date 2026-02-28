@@ -26,6 +26,8 @@ pub struct PipelineConfig {
     pub min_total_trades_for_signal: i32,
     pub min_signal_notional: Decimal,
     pub max_signal_notional: Decimal,
+    pub min_signal_ev: Decimal,
+    pub assumed_slippage_pct: Decimal,
     pub signal_dedup_window_secs: u64,
 }
 
@@ -291,6 +293,10 @@ pub async fn process_trade_event(
 
     let has_enough_total_trades = effective_total_trades >= config.min_total_trades_for_signal;
 
+    // EV_copy = EV * (1 - assumed_slippage) — slippage-adjusted expected value per trade
+    let ev_copy = score.expected_value * (Decimal::ONE - config.assumed_slippage_pct);
+    let has_sufficient_ev = ev_copy >= config.min_signal_ev;
+
     if !is_valid_classification {
         tracing::info!(
             wallet = %event.wallet,
@@ -333,6 +339,19 @@ pub async fn process_trade_event(
             "Signal blocked: notional ${} above ${} maximum",
             event.notional,
             config.max_signal_notional
+        );
+    } else if !has_sufficient_ev {
+        tracing::info!(
+            wallet = %event.wallet,
+            ev = %score.expected_value,
+            ev_copy = %ev_copy,
+            min = %config.min_signal_ev,
+            slippage_pct = %config.assumed_slippage_pct,
+            "Signal blocked: EV_copy ${} below ${} minimum (EV=${}, slippage={}%)",
+            ev_copy,
+            config.min_signal_ev,
+            score.expected_value,
+            config.assumed_slippage_pct * Decimal::ONE_HUNDRED
         );
     } else if score.win_rate >= config.min_signal_win_rate && whale.is_active.unwrap_or(true) {
         // Dedup check: skip if same (wallet, asset_id, side) emitted within window

@@ -72,6 +72,8 @@ pub struct AppConfig {
     pub min_total_trades_for_signal: i32,
     pub min_signal_notional: Decimal,
     pub max_signal_notional: Decimal,
+    pub min_signal_ev: Decimal,
+    pub assumed_slippage_pct: Decimal,
 }
 
 impl AppConfig {
@@ -228,6 +230,14 @@ impl AppConfig {
                 .unwrap_or_else(|_| "500000".into())
                 .parse()
                 .unwrap_or(Decimal::from(500_000)),
+            min_signal_ev: env::var("MIN_SIGNAL_EV")
+                .unwrap_or_else(|_| "50".into())
+                .parse()
+                .unwrap_or(Decimal::from(50)),
+            assumed_slippage_pct: env::var("ASSUMED_SLIPPAGE_PCT")
+                .unwrap_or_else(|_| "0.02".into())
+                .parse()
+                .unwrap_or(Decimal::new(2, 2)),
         })
     }
 

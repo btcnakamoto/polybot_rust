@@ -17,6 +17,8 @@ fn default_pipeline_config() -> PipelineConfig {
         min_total_trades_for_signal: 50,
         min_signal_notional: Decimal::from(50_000),
         max_signal_notional: Decimal::from(500_000),
+        min_signal_ev: Decimal::from(50),
+        assumed_slippage_pct: Decimal::new(2, 2),
         signal_dedup_window_secs: 10,
     }
 }
