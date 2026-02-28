@@ -122,3 +122,11 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+export interface SystemStatus {
+  mode: string;
+  paused: boolean;
+  wallet?: string;
+  usdc_balance?: string;
+  copy_enabled: boolean;
+}

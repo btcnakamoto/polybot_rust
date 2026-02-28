@@ -1,10 +1,28 @@
 import axios from 'axios';
-import type { ApiResponse, ConfigEntry, ConsensusSignal, CopyOrder, DashboardSummary, PerformanceMetrics, PnlDataPoint, Position, Whale, WhaleBasket, WhaleTrade } from '../types';
+import type {
+  ApiResponse,
+  ConfigEntry,
+  ConsensusSignal,
+  CopyOrder,
+  DashboardSummary,
+  PerformanceMetrics,
+  PnlDataPoint,
+  Position,
+  SystemStatus,
+  Whale,
+  WhaleBasket,
+  WhaleTrade,
+} from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
   const { data } = await api.get<DashboardSummary>('/dashboard/summary');
+  return data;
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatus> {
+  const { data } = await api.get<SystemStatus>('/control/status');
   return data;
 }
 
@@ -99,4 +117,18 @@ export async function fetchConfig(): Promise<ConfigEntry[]> {
 
 export async function updateConfig(entries: Record<string, string>): Promise<void> {
   await api.put('/config', { entries });
+}
+
+// Control
+
+export async function controlStop(): Promise<void> {
+  await api.post('/control/stop');
+}
+
+export async function controlResume(): Promise<void> {
+  await api.post('/control/resume');
+}
+
+export async function controlCancelAll(): Promise<void> {
+  await api.post('/control/cancel-all');
 }
