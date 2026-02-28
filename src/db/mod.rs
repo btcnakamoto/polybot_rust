@@ -1,3 +1,6 @@
+pub mod trade_repo;
+pub mod whale_repo;
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 

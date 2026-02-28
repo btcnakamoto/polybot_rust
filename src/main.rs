@@ -10,6 +10,7 @@ mod polymarket;
 
 use crate::api::router::create_router;
 use crate::config::AppConfig;
+use crate::ingestion::pipeline::process_trade_event;
 use crate::ingestion::ws_listener::run_ws_listener;
 use crate::models::WhaleTradeEvent;
 
@@ -31,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let db = db::init_pool(&config.database_url).await?;
     tracing::info!("Database connected");
 
-    // --- Phase 1: WebSocket data pipeline ---
+    // --- Data pipeline: WS ingestion → intelligence processing ---
     let (tx, mut rx) = tokio::sync::mpsc::channel::<WhaleTradeEvent>(1000);
 
     if config.ws_subscribe_token_ids.is_empty() {
@@ -47,19 +48,22 @@ async fn main() -> anyhow::Result<()> {
             run_ws_listener(ws_url, token_ids, tx).await;
         });
 
-        // Temporary consumer: log events to console (Phase 1 verification)
+        // Phase 2: Intelligence pipeline consumer
+        let pipeline_db = db.clone();
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
-                tracing::info!(
+                tracing::debug!(
                     wallet = %event.wallet,
-                    market = %event.market_id,
-                    asset_id = %event.asset_id,
-                    side = %event.side,
-                    size = %event.size,
-                    price = %event.price,
                     notional = %event.notional,
                     "WhaleTradeEvent received in pipeline"
                 );
+                if let Err(e) = process_trade_event(&event, &pipeline_db).await {
+                    tracing::error!(
+                        error = %e,
+                        wallet = %event.wallet,
+                        "Pipeline processing failed"
+                    );
+                }
             }
             tracing::warn!("WhaleTradeEvent channel closed");
         });

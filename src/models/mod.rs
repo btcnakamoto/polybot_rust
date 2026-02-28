@@ -1,3 +1,9 @@
+pub mod trade;
+pub mod whale;
+
+pub use trade::{TradeResult, WhaleTrade};
+pub use whale::Whale;
+
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
