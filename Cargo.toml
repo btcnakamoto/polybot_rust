@@ -1,0 +1,40 @@
+[package]
+name = "polybot"
+version = "0.1.0"
+edition = "2021"
+description = "Polymarket whale copy-trading bot"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "rust_decimal", "uuid"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["db-postgres", "serde"] }
+dotenvy = "0.15"
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# --- Phase 1+ dependencies (uncomment when needed) ---
+# reqwest = { version = "0.12", features = ["json"] }
+# jsonwebtoken = "9"
+# axum-extra = { version = "0.9", features = ["typed-header"] }
+# ethers = { version = "2", features = ["ws"] }
+# redis = { version = "0.27", features = ["tokio-comp"] }
