@@ -5,9 +5,9 @@ use thiserror::Error;
 /// Configurable risk limits.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskLimits {
-    /// Max single position as fraction of bankroll (default 5%).
+    /// Max single position as fraction of bankroll (default 20%).
     pub max_position_pct: Decimal,
-    /// Max concurrent open positions (default 2).
+    /// Max concurrent open positions (default 10).
     pub max_open_positions: i64,
     /// Max daily loss in USDC (default 500).
     pub max_daily_loss: Decimal,
@@ -20,8 +20,8 @@ pub struct RiskLimits {
 impl Default for RiskLimits {
     fn default() -> Self {
         Self {
-            max_position_pct: Decimal::new(5, 2),       // 0.05
-            max_open_positions: 2,
+            max_position_pct: Decimal::new(20, 2),      // 0.20
+            max_open_positions: 10,
             max_daily_loss: Decimal::from(500),
             min_spread_to_resolution: Decimal::new(5, 2), // 0.05
             max_slippage_pct: Decimal::new(3, 2),         // 0.03
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_position_too_large() {
         let order = PendingOrder {
-            size: Decimal::from(600), // > 5% of 10k = 500
+            size: Decimal::from(2500), // > 20% of 10k = 2000
             price: Decimal::new(50, 2),
         };
         let result = check_risk(&order, &default_portfolio(), &RiskLimits::default());
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_too_many_positions() {
         let portfolio = PortfolioSnapshot {
-            open_positions: 2,
+            open_positions: 10,
             ..default_portfolio()
         };
         let order = PendingOrder {
