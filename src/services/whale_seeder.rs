@@ -79,6 +79,7 @@ pub async fn run_whale_seeder(
         }
 
         // Fetch recent trades to seed initial data
+        let mut trade_count = 0i32;
         match data_client.get_user_trades(&address, 50).await {
             Ok(trades) => {
                 for trade in &trades {
@@ -91,14 +92,20 @@ pub async fn run_whale_seeder(
 
                     let traded_at = trade
                         .timestamp
-                        .as_deref()
-                        .and_then(|t| {
-                            if let Ok(secs) = t.parse::<i64>() {
-                                return chrono::DateTime::from_timestamp(secs, 0);
+                        .as_ref()
+                        .and_then(|t| match t {
+                            serde_json::Value::Number(n) => {
+                                n.as_i64().and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
                             }
-                            chrono::DateTime::parse_from_rfc3339(t)
-                                .ok()
-                                .map(|dt| dt.with_timezone(&Utc))
+                            serde_json::Value::String(s) => {
+                                if let Ok(secs) = s.parse::<i64>() {
+                                    return chrono::DateTime::from_timestamp(secs, 0);
+                                }
+                                chrono::DateTime::parse_from_rfc3339(s)
+                                    .ok()
+                                    .map(|dt| dt.with_timezone(&Utc))
+                            }
+                            _ => None,
                         })
                         .unwrap_or_else(Utc::now);
 
@@ -108,6 +115,8 @@ pub async fn run_whale_seeder(
                     .await
                     {
                         tracing::debug!(error = %e, "Failed to insert seeded trade (may be duplicate)");
+                    } else {
+                        trade_count += 1;
                     }
                 }
                 tracing::debug!(
@@ -123,6 +132,34 @@ pub async fn run_whale_seeder(
                     "Failed to fetch trades for whale — skipping trade seeding"
                 );
             }
+        }
+
+        // Update whale stats from leaderboard data + trade count
+        let pnl = entry.pnl.unwrap_or(Decimal::ZERO);
+        let vol = entry.volume.unwrap_or(Decimal::ZERO);
+        let classification = if pnl > Decimal::from(100_000) {
+            "top_tier"
+        } else if pnl > Decimal::from(10_000) {
+            "high_performer"
+        } else {
+            "profitable"
+        };
+
+        if let Err(e) = sqlx::query(
+            r#"UPDATE whales
+               SET total_pnl = $2, total_trades = $3, classification = $4,
+                   category = $5, updated_at = NOW()
+               WHERE id = $1"#,
+        )
+        .bind(whale.id)
+        .bind(pnl)
+        .bind(trade_count)
+        .bind(classification)
+        .bind(format!("vol:{}", vol.round()))
+        .execute(pool)
+        .await
+        {
+            tracing::warn!(error = %e, "Failed to update whale stats from leaderboard");
         }
 
         seeded_count += 1;

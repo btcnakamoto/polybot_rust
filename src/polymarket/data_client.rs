@@ -34,7 +34,7 @@ pub struct LeaderboardEntry {
 /// A single trade from the user trades endpoint.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UserTrade {
-    #[serde(default)]
+    #[serde(default, alias = "asset")]
     pub token_id: Option<String>,
     #[serde(default)]
     pub side: Option<String>,
@@ -43,8 +43,8 @@ pub struct UserTrade {
     #[serde(default)]
     pub price: Option<Decimal>,
     #[serde(default)]
-    pub timestamp: Option<String>,
-    #[serde(default)]
+    pub timestamp: Option<serde_json::Value>,
+    #[serde(default, alias = "conditionId")]
     pub market: Option<String>,
 }
 
