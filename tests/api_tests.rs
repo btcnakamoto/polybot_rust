@@ -50,6 +50,8 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
             market_min_volume: rust_decimal::Decimal::from(10_000),
             market_min_liquidity: rust_decimal::Decimal::from(5_000),
             whale_seeder_enabled: false,
+            whale_seeder_skip_top_n: 10,
+            whale_seeder_min_trades: 100,
             default_stop_loss_pct: rust_decimal::Decimal::new(1500, 2),
             default_take_profit_pct: rust_decimal::Decimal::new(5000, 2),
             position_monitor_interval_secs: 30,

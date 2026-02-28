@@ -30,7 +30,7 @@ pub struct CopyEngineConfig {
 impl Default for CopyEngineConfig {
     fn default() -> Self {
         Self {
-            strategy: SizingStrategy::Fixed,
+            strategy: SizingStrategy::Kelly,
             bankroll: Decimal::from(1_000),
             base_amount: Decimal::from(50),
             risk_limits: RiskLimits::default(),

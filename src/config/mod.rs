@@ -50,6 +50,8 @@ pub struct AppConfig {
 
     // Whale seeder
     pub whale_seeder_enabled: bool,
+    pub whale_seeder_skip_top_n: usize,
+    pub whale_seeder_min_trades: u32,
 
     // Exit strategy (SL/TP)
     pub default_stop_loss_pct: Decimal,
@@ -91,7 +93,7 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(true),
 
-            copy_strategy: env::var("COPY_STRATEGY").unwrap_or_else(|_| "fixed".into()),
+            copy_strategy: env::var("COPY_STRATEGY").unwrap_or_else(|_| "kelly".into()),
             bankroll: env::var("BANKROLL")
                 .unwrap_or_else(|_| "1000".into())
                 .parse()
@@ -154,6 +156,14 @@ impl AppConfig {
                 .unwrap_or_else(|_| "true".into())
                 .parse()
                 .unwrap_or(true),
+            whale_seeder_skip_top_n: env::var("WHALE_SEEDER_SKIP_TOP_N")
+                .unwrap_or_else(|_| "10".into())
+                .parse()
+                .unwrap_or(10),
+            whale_seeder_min_trades: env::var("WHALE_SEEDER_MIN_TRADES")
+                .unwrap_or_else(|_| "100".into())
+                .parse()
+                .unwrap_or(100),
 
             default_stop_loss_pct: env::var("STOP_LOSS_PCT")
                 .unwrap_or_else(|_| "15.0".into())
