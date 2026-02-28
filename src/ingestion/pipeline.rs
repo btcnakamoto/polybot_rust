@@ -2,11 +2,13 @@ use chrono::Utc;
 use metrics::{counter, histogram};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use std::time::Instant;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 use crate::db::{basket_repo, market_repo, trade_repo, whale_repo};
 use crate::intelligence::basket::{check_admission, check_basket_consensus, AdmissionResult};
+use crate::intelligence::classifier::Classification;
 use crate::intelligence::{classify_wallet, score_wallet};
 use crate::intelligence::scorer::WalletScore;
 use crate::models::{CopySignal, Side, TradeResult, WhaleTradeEvent};
@@ -15,9 +17,14 @@ use crate::services::notifier::Notifier;
 /// Minimum notional value (in USDC) to consider a trade from an UNKNOWN wallet.
 const WHALE_NOTIONAL_THRESHOLD: i64 = 10_000;
 
-/// Minimum notional for trades from TRACKED (already-verified) whales.
-/// Much lower since we've already validated these wallets via the seeder.
-const TRACKED_WHALE_MIN_NOTIONAL: i64 = 10;
+/// Pipeline configuration for signal quality gates.
+#[derive(Debug, Clone)]
+pub struct PipelineConfig {
+    pub tracked_whale_min_notional: Decimal,
+    pub min_signal_win_rate: Decimal,
+    pub min_resolved_for_signal: i32,
+    pub signal_dedup_window_secs: u64,
+}
 
 /// Process a single WhaleTradeEvent through the intelligence pipeline:
 /// 1. Filter by notional threshold
@@ -32,6 +39,8 @@ pub async fn process_trade_event(
     pool: &PgPool,
     signal_tx: Option<&mpsc::Sender<CopySignal>>,
     notifier: Option<&Notifier>,
+    config: &PipelineConfig,
+    dedup: &tokio::sync::Mutex<HashMap<String, Instant>>,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
 
@@ -45,7 +54,7 @@ pub async fn process_trade_event(
         .unwrap_or(false);
 
     let threshold = if is_tracked {
-        Decimal::from(TRACKED_WHALE_MIN_NOTIONAL)
+        config.tracked_whale_min_notional
     } else {
         Decimal::from(WHALE_NOTIONAL_THRESHOLD)
     };
@@ -141,6 +150,7 @@ pub async fn process_trade_event(
         .into_iter()
         .filter(|r| r.profit != Decimal::ZERO)
         .collect();
+    let resolved_count = resolved_results.len() as i32;
 
     // Build score: prefer resolved trade data, fall back to existing DB scores (from seeder)
     let score = if !resolved_results.is_empty() {
@@ -266,13 +276,47 @@ pub async fn process_trade_event(
         }
     }
 
-    // Step 6: Emit CopySignal if wallet has good scores and is active.
-    // Individual signals are score-gated (not classification-gated) because the
-    // pattern-based classifier can produce false positives on leaderboard wallets
-    // that trade frequently. Basket admission is separate (Step 7).
-    let min_signal_wr = Decimal::new(55, 2); // 55% win rate minimum for individual signals
-    if score.win_rate >= min_signal_wr && whale.is_active.unwrap_or(true) {
-        if let Some(tx) = signal_tx {
+    // Step 6: Emit CopySignal if wallet passes classification, validated scores, and win rate gates.
+    let is_valid_classification = classification != Classification::Bot
+        && classification != Classification::MarketMaker;
+
+    let has_validated_scores = resolved_count >= config.min_resolved_for_signal;
+
+    if !is_valid_classification {
+        tracing::info!(
+            wallet = %event.wallet,
+            classification = %classification,
+            "Signal blocked: classified as {}",
+            classification.as_str()
+        );
+    } else if !has_validated_scores {
+        tracing::info!(
+            wallet = %event.wallet,
+            resolved = resolved_count,
+            required = config.min_resolved_for_signal,
+            "Signal blocked: only {} resolved trades (need {})",
+            resolved_count,
+            config.min_resolved_for_signal
+        );
+    } else if score.win_rate >= config.min_signal_win_rate && whale.is_active.unwrap_or(true) {
+        // Dedup check: skip if same (wallet, asset_id, side) emitted within window
+        let dedup_key = format!("{}:{}:{}", event.wallet, event.asset_id, event.side);
+        let is_dup = {
+            let mut dedup_map = dedup.lock().await;
+            dedup_map.retain(|_, t| t.elapsed() < Duration::from_secs(config.signal_dedup_window_secs));
+            use std::collections::hash_map::Entry;
+            match dedup_map.entry(dedup_key.clone()) {
+                Entry::Occupied(_) => true,
+                Entry::Vacant(e) => {
+                    e.insert(Instant::now());
+                    false
+                }
+            }
+        };
+
+        if is_dup {
+            tracing::debug!(key = %dedup_key, "Signal deduped — skipping");
+        } else if let Some(tx) = signal_tx {
             let signal = CopySignal {
                 whale_trade_id: trade.id,
                 wallet: event.wallet.clone(),

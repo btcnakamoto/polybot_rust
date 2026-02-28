@@ -57,6 +57,8 @@ async fn build_test_app() -> (axum::Router, Arc<AtomicBool>) {
         default_stop_loss_pct: rust_decimal::Decimal::new(1500, 2),
         default_take_profit_pct: rust_decimal::Decimal::new(5000, 2),
         position_monitor_interval_secs: 30,
+        tracked_whale_min_notional: rust_decimal::Decimal::from(500),
+        min_resolved_for_signal: 3,
     });
 
     let state = AppState {

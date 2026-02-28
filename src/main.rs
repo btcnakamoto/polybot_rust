@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::broadcast;
 
 use polybot::api::router::create_router;
@@ -10,9 +11,11 @@ use polybot::execution::order_executor::OrderExecutor;
 use polybot::execution::position_sizer::SizingStrategy;
 use polybot::execution::risk_manager::RiskLimits;
 use polybot::ingestion::chain_listener::run_chain_listener;
-use polybot::ingestion::pipeline::process_trade_event;
+use polybot::ingestion::pipeline::{process_trade_event, PipelineConfig};
 use polybot::ingestion::ws_listener::run_ws_listener;
 use polybot::models::{CopySignal, WhaleTradeEvent};
+use rust_decimal::Decimal;
+use std::collections::HashMap;
 use polybot::polymarket::{
     BalanceChecker, ClobClient, DataClient, GammaClient, PolymarketAuth, PolymarketWallet,
     TradingClient,
@@ -333,6 +336,13 @@ async fn main() -> anyhow::Result<()> {
         let pipeline_db = db.clone();
         let copy_enabled = config.copy_enabled;
         let pipeline_notifier = notifier.clone();
+        let pipeline_config = PipelineConfig {
+            tracked_whale_min_notional: config.tracked_whale_min_notional,
+            min_signal_win_rate: Decimal::new(55, 2),
+            min_resolved_for_signal: config.min_resolved_for_signal,
+            signal_dedup_window_secs: 10,
+        };
+        let dedup_state = Arc::new(tokio::sync::Mutex::new(HashMap::<String, Instant>::new()));
         tokio::spawn(async move {
             let signal_sender = if copy_enabled { Some(&signal_tx) } else { None };
             while let Some(event) = trade_rx.recv().await {
@@ -346,6 +356,8 @@ async fn main() -> anyhow::Result<()> {
                     &pipeline_db,
                     signal_sender,
                     pipeline_notifier.as_deref(),
+                    &pipeline_config,
+                    &dedup_state,
                 ).await {
                     tracing::error!(
                         error = %e,

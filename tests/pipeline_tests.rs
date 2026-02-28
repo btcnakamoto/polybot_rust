@@ -2,10 +2,21 @@ mod common;
 
 use chrono::Utc;
 use rust_decimal::Decimal;
+use std::collections::HashMap;
+use std::time::Instant;
 
 use polybot::db::{whale_repo, trade_repo};
-use polybot::ingestion::pipeline::process_trade_event;
+use polybot::ingestion::pipeline::{process_trade_event, PipelineConfig};
 use polybot::models::{Side, WhaleTradeEvent};
+
+fn default_pipeline_config() -> PipelineConfig {
+    PipelineConfig {
+        tracked_whale_min_notional: Decimal::from(500),
+        min_signal_win_rate: Decimal::new(55, 2),
+        min_resolved_for_signal: 3,
+        signal_dedup_window_secs: 10,
+    }
+}
 
 fn make_trade_event(wallet: &str, notional: i64, side: Side) -> WhaleTradeEvent {
     WhaleTradeEvent {
@@ -23,10 +34,12 @@ fn make_trade_event(wallet: &str, notional: i64, side: Side) -> WhaleTradeEvent 
 #[tokio::test]
 async fn test_large_trade_creates_whale_and_records_trade() {
     let pool = common::setup_test_db().await;
+    let config = default_pipeline_config();
+    let dedup = tokio::sync::Mutex::new(HashMap::<String, Instant>::new());
 
     let event = make_trade_event("0xWHALE_LARGE_001", 50_000, Side::Buy);
 
-    process_trade_event(&event, &pool, None, None)
+    process_trade_event(&event, &pool, None, None, &config, &dedup)
         .await
         .expect("Pipeline should succeed");
 
@@ -51,10 +64,12 @@ async fn test_large_trade_creates_whale_and_records_trade() {
 #[tokio::test]
 async fn test_small_trade_is_filtered() {
     let pool = common::setup_test_db().await;
+    let config = default_pipeline_config();
+    let dedup = tokio::sync::Mutex::new(HashMap::<String, Instant>::new());
 
     let event = make_trade_event("0xWHALE_SMALL_001", 500, Side::Buy);
 
-    process_trade_event(&event, &pool, None, None)
+    process_trade_event(&event, &pool, None, None, &config, &dedup)
         .await
         .expect("Pipeline should succeed");
 
@@ -69,6 +84,8 @@ async fn test_small_trade_is_filtered() {
 #[tokio::test]
 async fn test_classification_updates_on_multiple_trades() {
     let pool = common::setup_test_db().await;
+    let config = default_pipeline_config();
+    let dedup = tokio::sync::Mutex::new(HashMap::<String, Instant>::new());
 
     // Send multiple trades from the same wallet
     for i in 0..5 {
@@ -83,7 +100,7 @@ async fn test_classification_updates_on_multiple_trades() {
             timestamp: Utc::now(),
         };
 
-        process_trade_event(&event, &pool, None, None)
+        process_trade_event(&event, &pool, None, None, &config, &dedup)
             .await
             .expect("Pipeline should succeed");
     }

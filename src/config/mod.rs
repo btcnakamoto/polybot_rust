@@ -64,6 +64,10 @@ pub struct AppConfig {
     pub default_stop_loss_pct: Decimal,
     pub default_take_profit_pct: Decimal,
     pub position_monitor_interval_secs: u64,
+
+    // Pipeline signal quality
+    pub tracked_whale_min_notional: Decimal,
+    pub min_resolved_for_signal: i32,
 }
 
 impl AppConfig {
@@ -195,6 +199,15 @@ impl AppConfig {
                 .unwrap_or_else(|_| "30".into())
                 .parse()
                 .unwrap_or(30),
+
+            tracked_whale_min_notional: env::var("TRACKED_WHALE_MIN_NOTIONAL")
+                .unwrap_or_else(|_| "500".into())
+                .parse()
+                .unwrap_or(Decimal::from(500)),
+            min_resolved_for_signal: env::var("MIN_RESOLVED_FOR_SIGNAL")
+                .unwrap_or_else(|_| "3".into())
+                .parse()
+                .unwrap_or(3),
         })
     }
 
