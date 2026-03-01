@@ -75,6 +75,9 @@ pub struct AppConfig {
     pub max_signal_notional: Decimal,
     pub min_signal_ev: Decimal,
     pub assumed_slippage_pct: Decimal,
+
+    // Risk management
+    pub max_daily_loss: Decimal,
 }
 
 impl AppConfig {
@@ -243,6 +246,11 @@ impl AppConfig {
                 .unwrap_or_else(|_| "0.02".into())
                 .parse()
                 .unwrap_or(Decimal::new(2, 2)),
+
+            max_daily_loss: env::var("MAX_DAILY_LOSS")
+                .unwrap_or_else(|_| "2000".into())
+                .parse()
+                .unwrap_or(Decimal::from(2_000)),
         })
     }
 

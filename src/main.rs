@@ -178,11 +178,14 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Copy engine running in LIVE mode");
         }
 
+        let mut risk_limits = RiskLimits::default();
+        risk_limits.max_daily_loss = config.max_daily_loss;
+
         let engine_config = CopyEngineConfig {
             strategy: SizingStrategy::parse_strategy(&config.copy_strategy),
             bankroll: config.bankroll,
             base_amount: config.base_copy_amount,
-            risk_limits: RiskLimits::default(),
+            risk_limits: risk_limits.clone(),
             dry_run,
             default_stop_loss_pct: config.default_stop_loss_pct,
             default_take_profit_pct: config.default_take_profit_pct,
@@ -193,7 +196,7 @@ async fn main() -> anyhow::Result<()> {
         let executor = OrderExecutor::new(
             executor_trading,
             clob_client,
-            RiskLimits::default(),
+            risk_limits.clone(),
             dry_run,
         );
 
@@ -233,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
                     strategy: SizingStrategy::parse_strategy(&config.copy_strategy),
                     bankroll: config.bankroll,
                     base_amount: config.base_copy_amount,
-                    risk_limits: RiskLimits::default(),
+                    risk_limits: risk_limits.clone(),
                     dry_run: false,
                     default_stop_loss_pct: config.default_stop_loss_pct,
                     default_take_profit_pct: config.default_take_profit_pct,
