@@ -36,7 +36,7 @@ pub async fn run_resolution_poller(
         }
 
         for market_outcome in &unresolved {
-            match data_client.get_market(&market_outcome.market_id).await {
+            match data_client.get_market_for_resolution(&market_outcome.market_id).await {
                 Ok(api_market) => {
                     // Check if market is closed
                     if api_market.closed != Some(true) {
@@ -154,10 +154,10 @@ pub async fn run_resolution_poller(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(
+                    tracing::debug!(
                         error = %e,
                         market_id = %market_outcome.market_id,
-                        "Failed to fetch market from API — will retry"
+                        "Resolution: market lookup failed — will retry next cycle"
                     );
                 }
             }

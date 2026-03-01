@@ -6,6 +6,7 @@ use thiserror::Error;
 use super::types::{ApiMarket, ApiTrade};
 
 const DATA_API_BASE: &str = "https://data-api.polymarket.com";
+const GAMMA_API_BASE: &str = "https://gamma-api.polymarket.com";
 
 #[derive(Debug, Error)]
 pub enum DataClientError {
@@ -128,6 +129,38 @@ impl DataClient {
 
         let entries: Vec<LeaderboardEntry> = resp.json().await?;
         Ok(entries)
+    }
+
+    /// Look up a market for resolution purposes via the Gamma API.
+    ///
+    /// Handles both formats stored in `market_outcomes.market_id`:
+    ///   - `0x`-prefixed hex  → condition_id  → `?condition_id=`
+    ///   - decimal string     → CLOB token_id → `?clob_token_ids=`
+    pub async fn get_market_for_resolution(
+        &self,
+        market_id: &str,
+    ) -> Result<ApiMarket, DataClientError> {
+        let url = format!("{}/markets", GAMMA_API_BASE);
+
+        let (key, value) = if market_id.starts_with("0x") {
+            ("condition_id", market_id.to_string())
+        } else {
+            ("clob_token_ids", market_id.to_string())
+        };
+
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[(key, &value)])
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let markets: Vec<ApiMarket> = resp.json().await?;
+        markets
+            .into_iter()
+            .next()
+            .ok_or_else(|| DataClientError::Unexpected(format!("no market found for {}", market_id)))
     }
 
     /// Fetch recent trades for a specific user address.

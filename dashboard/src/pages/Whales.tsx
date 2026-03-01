@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { fetchWhales } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
+import { ExternalLink, History } from 'lucide-react';
 import type { Whale } from '../types';
 
 type SortKey = 'total_pnl' | 'win_rate' | 'sharpe_ratio' | 'total_trades';
@@ -47,7 +48,7 @@ export default function Whales() {
   };
 
   const sortIcon = (key: SortKey) =>
-    sortKey === key ? (sortAsc ? ' ↑' : ' ↓') : '';
+    sortKey === key ? (sortAsc ? ' \u2191' : ' \u2193') : '';
 
   return (
     <div className="space-y-4">
@@ -66,7 +67,7 @@ export default function Whales() {
 
       <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm min-w-[800px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
                 <th className="text-left px-4 py-3 font-medium">地址</th>
@@ -97,12 +98,13 @@ export default function Whales() {
                   总盈亏{sortIcon('total_pnl')}
                 </th>
                 <th className="text-left px-4 py-3 font-medium">状态</th>
+                <th className="text-center px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-slate-600 border-t-indigo-400 rounded-full animate-spin" />
                       加载中...
@@ -111,7 +113,7 @@ export default function Whales() {
                 </tr>
               ) : sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                     {filter ? '无匹配结果' : '暂无跟踪巨鲸'}
                   </td>
                 </tr>
@@ -122,13 +124,19 @@ export default function Whales() {
                   return (
                     <tr
                       key={w.id}
-                      onClick={() => navigate(`/whales/${w.address}`)}
-                      className="border-b border-slate-700/30 hover:bg-slate-700/20 cursor-pointer transition-colors"
+                      className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-slate-300">
+                        <a
+                          href={`https://polymarket.com/profile/${w.address}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1"
+                          title="查看 Polymarket 主页"
+                        >
                           {w.address.slice(0, 6)}...{w.address.slice(-4)}
-                        </span>
+                          <ExternalLink size={12} />
+                        </a>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={w.classification ?? 'unknown'} />
@@ -154,6 +162,16 @@ export default function Whales() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={w.is_active ? 'open' : 'closed'} />
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => navigate(`/whales/${w.address}`)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 rounded-lg transition-colors"
+                          title="查看交易历史"
+                        >
+                          <History size={13} />
+                          交易记录
+                        </button>
                       </td>
                     </tr>
                   );

@@ -82,7 +82,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-3">
         <StatCard
           label="跟踪巨鲸"
           value={summary?.tracked_whales ?? 0}
@@ -111,7 +111,7 @@ export default function Dashboard() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
         {/* Cumulative PnL */}
         <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50 p-4">
           <h3 className="text-sm font-medium text-white mb-3">累计盈亏曲线</h3>

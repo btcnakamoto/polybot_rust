@@ -92,14 +92,24 @@ export default function WhaleDetail() {
           </div>
           <p className="text-xs text-slate-500 font-mono mt-1">{whale.address}</p>
         </div>
-        <a
-          href={`https://polygonscan.com/address/${whale.address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-indigo-400 hover:text-indigo-300"
-        >
-          Polygonscan
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href={`https://polymarket.com/profile/${whale.address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-indigo-400 hover:text-indigo-300"
+          >
+            Polymarket
+          </a>
+          <a
+            href={`https://polygonscan.com/address/${whale.address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-indigo-400 hover:text-indigo-300"
+          >
+            Polygonscan
+          </a>
+        </div>
       </div>
 
       {/* Stats */}
