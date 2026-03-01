@@ -167,7 +167,7 @@ pub async fn run_resolution_poller(
                     }
                 }
                 Err(e) => {
-                    tracing::debug!(
+                    tracing::warn!(
                         error = %e,
                         market_id = %market_outcome.market_id,
                         "Resolution: market lookup failed"
