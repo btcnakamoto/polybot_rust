@@ -73,6 +73,55 @@ impl TradingClient {
         Ok(response)
     }
 
+    /// Place a maker-only (post_only) limit order on the CLOB.
+    ///
+    /// Same as `place_limit_order` but with `post_only=true` to ensure the order
+    /// rests on the book and never crosses the spread (zero taker fees).
+    pub async fn place_maker_order(
+        &self,
+        token_id: &str,
+        side: &str,
+        size: Decimal,
+        price: Decimal,
+    ) -> anyhow::Result<PostOrderResponse> {
+        let sdk_side = match side.to_uppercase().as_str() {
+            "BUY" => SdkSide::Buy,
+            _ => SdkSide::Sell,
+        };
+
+        let token_id_u256 = U256::from_str_radix(token_id, 10)
+            .or_else(|_| {
+                token_id
+                    .strip_prefix("0x")
+                    .map(|hex| U256::from_str_radix(hex, 16))
+                    .unwrap_or_else(|| U256::from_str_radix(token_id, 16))
+            })?;
+
+        let client = self.wallet.client();
+        let signer = self.wallet.signer();
+
+        let signable_order = client
+            .limit_order()
+            .token_id(token_id_u256)
+            .side(sdk_side)
+            .price(price)
+            .size(size)
+            .post_only(true)
+            .build()
+            .await?;
+
+        let signed_order = client.sign(signer, signable_order).await?;
+        let response = client.post_order(signed_order).await?;
+
+        tracing::info!(
+            order_id = ?response.order_id,
+            status = ?response.status,
+            "Maker order submitted to CLOB (post_only=true)"
+        );
+
+        Ok(response)
+    }
+
     /// Cancel a single order by CLOB order ID.
     pub async fn cancel_order(&self, order_id: &str) -> anyhow::Result<()> {
         self.wallet.client().cancel_order(order_id).await?;

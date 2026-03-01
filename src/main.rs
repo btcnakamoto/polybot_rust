@@ -186,8 +186,13 @@ async fn main() -> anyhow::Result<()> {
         let dry_run = config.dry_run || trading_client.is_none();
         if dry_run {
             tracing::info!("Copy engine running in DRY-RUN mode");
+        } else if config.maker_mode {
+            tracing::info!(
+                order_ttl_secs = config.maker_order_ttl_secs,
+                "Copy engine running in LIVE MAKER mode (post_only, zero taker fees)"
+            );
         } else {
-            tracing::info!("Copy engine running in LIVE mode");
+            tracing::info!("Copy engine running in LIVE TAKER mode");
         }
 
         let mut risk_limits = RiskLimits::default();
@@ -201,6 +206,8 @@ async fn main() -> anyhow::Result<()> {
             dry_run,
             default_stop_loss_pct: config.default_stop_loss_pct,
             default_take_profit_pct: config.default_take_profit_pct,
+            maker_mode: config.maker_mode,
+            maker_order_ttl_secs: config.maker_order_ttl_secs,
         };
 
         // Build OrderExecutor with optional TradingClient for live execution
@@ -210,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
             clob_client,
             risk_limits.clone(),
             dry_run,
+            config.maker_mode,
         );
 
         let engine_db = db.clone();
@@ -252,6 +260,8 @@ async fn main() -> anyhow::Result<()> {
                     dry_run: false,
                     default_stop_loss_pct: config.default_stop_loss_pct,
                     default_take_profit_pct: config.default_take_profit_pct,
+                    maker_mode: config.maker_mode,
+                    maker_order_ttl_secs: config.maker_order_ttl_secs,
                 };
 
                 tokio::spawn(async move {

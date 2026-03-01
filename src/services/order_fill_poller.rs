@@ -11,9 +11,6 @@ use crate::execution::capital_pool::CapitalPool;
 use crate::execution::copy_engine::CopyEngineConfig;
 use crate::polymarket::trading::TradingClient;
 
-/// Maximum age of a submitted order before auto-cancellation (5 minutes).
-const ORDER_STALE_SECS: i64 = 300;
-
 /// Run the fill poller loop. Periodically checks submitted orders against the
 /// CLOB to confirm fills, detect cancellations, and auto-cancel stale orders.
 pub async fn run_order_fill_poller(
@@ -23,9 +20,12 @@ pub async fn run_order_fill_poller(
     engine_config: CopyEngineConfig,
     poll_interval_secs: u64,
 ) {
+    let order_stale_secs = engine_config.maker_order_ttl_secs as i64;
     let mut ticker = interval(Duration::from_secs(poll_interval_secs));
     tracing::info!(
         interval_secs = poll_interval_secs,
+        order_stale_secs,
+        maker_mode = engine_config.maker_mode,
         "Order fill poller started"
     );
 
@@ -69,7 +69,7 @@ pub async fn run_order_fill_poller(
                 .placed_at
                 .map(|placed| {
                     let age = Utc::now() - placed;
-                    age.num_seconds() > ORDER_STALE_SECS
+                    age.num_seconds() > order_stale_secs
                 })
                 .unwrap_or(false);
 
@@ -196,7 +196,7 @@ pub async fn run_order_fill_poller(
                         tracing::warn!(
                             order_id = %order.id,
                             clob_order_id,
-                            "Fill poller: order stale (>5min) — cancelling"
+                            "Fill poller: order stale — cancelling"
                         );
                         if let Err(e) = trading_client.cancel_order(clob_order_id).await {
                             tracing::error!(error = %e, "Fill poller: failed to cancel stale order on CLOB");

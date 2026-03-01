@@ -32,6 +32,8 @@ pub struct OrderResult {
     pub success: bool,
     /// CLOB order ID returned by the exchange (None for dry-run).
     pub order_id: Option<String>,
+    /// True if the order is resting on the book (maker), false if filled immediately (taker).
+    pub resting: bool,
 }
 
 /// Executes orders against the Polymarket CLOB.
@@ -45,6 +47,7 @@ pub struct OrderExecutor {
     trading_client: Option<TradingClient>,
     risk_limits: RiskLimits,
     dry_run: bool,
+    maker_mode: bool,
 }
 
 impl OrderExecutor {
@@ -53,12 +56,14 @@ impl OrderExecutor {
         clob_client: Option<ClobClient>,
         risk_limits: RiskLimits,
         dry_run: bool,
+        maker_mode: bool,
     ) -> Self {
         Self {
             clob_client,
             trading_client,
             risk_limits,
             dry_run,
+            maker_mode,
         }
     }
 
@@ -93,6 +98,7 @@ impl OrderExecutor {
                 slippage: Decimal::ZERO,
                 success: true,
                 order_id: None,
+                resting: false,
             });
         }
 
@@ -103,16 +109,36 @@ impl OrderExecutor {
             match client.get_order_book(token_id).await {
                 Ok(book) => {
                     match side.to_uppercase().as_str() {
-                        "BUY" => book
-                            .asks
-                            .first()
-                            .map(|l| l.price)
-                            .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?,
-                        "SELL" => book
-                            .bids
-                            .first()
-                            .map(|l| l.price)
-                            .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?,
+                        "BUY" => {
+                            if self.maker_mode {
+                                // Maker: use best_bid (rest on buy side of the book)
+                                book.bids
+                                    .first()
+                                    .map(|l| l.price)
+                                    .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?
+                            } else {
+                                // Taker: use best_ask (cross the spread immediately)
+                                book.asks
+                                    .first()
+                                    .map(|l| l.price)
+                                    .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?
+                            }
+                        }
+                        "SELL" => {
+                            if self.maker_mode {
+                                // Maker: use best_ask (rest on sell side of the book)
+                                book.asks
+                                    .first()
+                                    .map(|l| l.price)
+                                    .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?
+                            } else {
+                                // Taker: use best_bid (cross the spread immediately)
+                                book.bids
+                                    .first()
+                                    .map(|l| l.price)
+                                    .ok_or_else(|| ExecutionError::EmptyOrderbook(token_id.to_string()))?
+                            }
+                        }
                         _ => target_price,
                     }
                 }
@@ -132,6 +158,7 @@ impl OrderExecutor {
         // 2. Slippage check
         let slippage = check_slippage(target_price, current_price, &self.risk_limits)?;
 
+        let mode_label = if self.maker_mode { "maker" } else { "taker" };
         tracing::info!(
             token_id,
             side,
@@ -139,15 +166,23 @@ impl OrderExecutor {
             target_price = %target_price,
             current_price = %current_price,
             slippage = %slippage,
+            mode = mode_label,
             "Placing live limit order on CLOB"
         );
 
-        // 3. Place real order via SDK
+        // 3. Place real order via SDK (maker uses post_only, taker uses regular limit)
         let trading = self.trading_client.as_ref().expect("checked above");
-        let response = trading
-            .place_limit_order(token_id, side, size, current_price)
-            .await
-            .map_err(|e| ExecutionError::ClobError(e.to_string()))?;
+        let response = if self.maker_mode {
+            trading
+                .place_maker_order(token_id, side, size, current_price)
+                .await
+                .map_err(|e| ExecutionError::ClobError(e.to_string()))?
+        } else {
+            trading
+                .place_limit_order(token_id, side, size, current_price)
+                .await
+                .map_err(|e| ExecutionError::ClobError(e.to_string()))?
+        };
 
         // 4. Check response
         if !response.success {
@@ -175,6 +210,7 @@ impl OrderExecutor {
             slippage,
             success: true,
             order_id,
+            resting: self.maker_mode,
         })
     }
 }
@@ -189,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dry_run_returns_success() {
-        let executor = OrderExecutor::new(None, None, RiskLimits::default(), true);
+        let executor = OrderExecutor::new(None, None, RiskLimits::default(), true, false);
         let result = executor
             .execute(
                 "12345",
@@ -204,12 +240,13 @@ mod tests {
         assert_eq!(r.fill_price, Decimal::new(55, 2));
         assert_eq!(r.slippage, Decimal::ZERO);
         assert!(r.order_id.is_none());
+        assert!(!r.resting);
     }
 
     #[tokio::test]
     async fn test_no_trading_client_auto_dry_run() {
         // Even with dry_run=false, missing trading_client forces dry-run
-        let executor = OrderExecutor::new(None, None, RiskLimits::default(), false);
+        let executor = OrderExecutor::new(None, None, RiskLimits::default(), false, false);
         let result = executor
             .execute(
                 "12345",
@@ -222,5 +259,6 @@ mod tests {
         let r = result.unwrap();
         assert!(r.success);
         assert!(r.order_id.is_none());
+        assert!(!r.resting);
     }
 }

@@ -31,6 +31,8 @@ pub struct CopyEngineConfig {
     pub dry_run: bool,
     pub default_stop_loss_pct: Decimal,
     pub default_take_profit_pct: Decimal,
+    pub maker_mode: bool,
+    pub maker_order_ttl_secs: u64,
 }
 
 impl Default for CopyEngineConfig {
@@ -43,6 +45,8 @@ impl Default for CopyEngineConfig {
             dry_run: true,
             default_stop_loss_pct: Decimal::new(1500, 2),  // 15.00%
             default_take_profit_pct: Decimal::new(5000, 2), // 50.00%
+            maker_mode: true,
+            maker_order_ttl_secs: 600,
         }
     }
 }

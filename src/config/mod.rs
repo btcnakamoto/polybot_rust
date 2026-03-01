@@ -78,6 +78,11 @@ pub struct AppConfig {
 
     // Risk management
     pub max_daily_loss: Decimal,
+
+    // Maker mode
+    pub maker_mode: bool,
+    pub maker_order_ttl_secs: u64,
+    pub maker_price_offset: Decimal,
 }
 
 impl AppConfig {
@@ -251,6 +256,19 @@ impl AppConfig {
                 .unwrap_or_else(|_| "2000".into())
                 .parse()
                 .unwrap_or(Decimal::from(2_000)),
+
+            maker_mode: env::var("MAKER_MODE")
+                .unwrap_or_else(|_| "true".into())
+                .parse()
+                .unwrap_or(true),
+            maker_order_ttl_secs: env::var("MAKER_ORDER_TTL")
+                .unwrap_or_else(|_| "600".into())
+                .parse()
+                .unwrap_or(600),
+            maker_price_offset: env::var("MAKER_PRICE_OFFSET")
+                .unwrap_or_else(|_| "0".into())
+                .parse()
+                .unwrap_or(Decimal::ZERO),
         })
     }
 
