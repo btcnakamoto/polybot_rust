@@ -88,3 +88,14 @@ pub async fn get_pending_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>>
 
     Ok(orders)
 }
+
+/// Get all orders (most recent first), limited to 200.
+pub async fn get_all_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>> {
+    let orders = sqlx::query_as::<_, CopyOrder>(
+        "SELECT * FROM copy_orders ORDER BY placed_at DESC LIMIT 200",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(orders)
+}

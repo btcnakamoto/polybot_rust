@@ -14,7 +14,7 @@ pub struct ApiResponse<T: Serialize> {
 }
 
 pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<CopyOrder>>> {
-    match order_repo::get_pending_orders(&state.db).await {
+    match order_repo::get_all_orders(&state.db).await {
         Ok(orders) => Json(ApiResponse {
             success: true,
             data: Some(orders),
