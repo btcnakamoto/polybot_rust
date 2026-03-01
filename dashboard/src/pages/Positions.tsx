@@ -93,13 +93,14 @@ export default function Positions() {
 
       <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[780px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
                 <th className="text-left px-4 py-3 font-medium">市场</th>
                 <th className="text-left px-4 py-3 font-medium">结果</th>
                 <th className="text-right px-4 py-3 font-medium">数量</th>
                 <th className="text-right px-4 py-3 font-medium">均价</th>
+                <th className="text-right px-4 py-3 font-medium">现价</th>
                 <th className="text-right px-4 py-3 font-medium">浮动盈亏</th>
                 <th className="text-right px-4 py-3 font-medium">已实现</th>
                 <th className="text-left px-4 py-3 font-medium">状态</th>
@@ -110,7 +111,7 @@ export default function Positions() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-slate-600 border-t-indigo-400 rounded-full animate-spin" />
                       加载中...
@@ -119,7 +120,7 @@ export default function Positions() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
                     暂无持仓
                   </td>
                 </tr>
@@ -161,6 +162,9 @@ export default function Positions() {
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-300">
                       {Number(p.avg_entry_price).toFixed(4)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono text-slate-300">
+                      {p.current_price ? Number(p.current_price).toFixed(4) : '--'}
                     </td>
                     <td className={`px-4 py-2 text-right font-mono font-medium ${
                       Number(p.unrealized_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
