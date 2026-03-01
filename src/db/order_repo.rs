@@ -89,6 +89,46 @@ pub async fn get_pending_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>>
     Ok(orders)
 }
 
+/// Transition a pending order to submitted with its CLOB order ID.
+pub async fn mark_order_submitted(
+    pool: &PgPool,
+    order_id: Uuid,
+    clob_order_id: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE copy_orders SET status = 'submitted', clob_order_id = $2 WHERE id = $1",
+    )
+    .bind(order_id)
+    .bind(clob_order_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Get all orders in 'submitted' status (awaiting fill confirmation).
+pub async fn get_submitted_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>> {
+    let orders = sqlx::query_as::<_, CopyOrder>(
+        "SELECT * FROM copy_orders WHERE status = 'submitted' ORDER BY placed_at ASC",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(orders)
+}
+
+/// Mark an order as cancelled.
+pub async fn cancel_order(pool: &PgPool, order_id: Uuid) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE copy_orders SET status = 'cancelled' WHERE id = $1",
+    )
+    .bind(order_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Get all orders (most recent first), limited to 200.
 pub async fn get_all_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>> {
     let orders = sqlx::query_as::<_, CopyOrder>(

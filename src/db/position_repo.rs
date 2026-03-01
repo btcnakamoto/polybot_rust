@@ -158,6 +158,65 @@ pub async fn update_position_price(
     Ok(())
 }
 
+/// Update the current price, unrealized PnL, and last_price_update for a position.
+pub async fn update_position_price_and_pnl(
+    pool: &PgPool,
+    position_id: uuid::Uuid,
+    current_price: Decimal,
+    unrealized_pnl: Decimal,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET current_price = $2, unrealized_pnl = $3, last_price_update = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(current_price)
+    .bind(unrealized_pnl)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Mark a position as "exiting" — an exit order has been submitted but not yet filled.
+pub async fn mark_position_exiting(
+    pool: &PgPool,
+    position_id: uuid::Uuid,
+    exit_reason: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE positions
+        SET status = 'exiting', exit_reason = $2
+        WHERE id = $1
+        "#,
+    )
+    .bind(position_id)
+    .bind(exit_reason)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Find an open/exiting position by token_id.
+pub async fn get_position_by_token_id(
+    pool: &PgPool,
+    token_id: &str,
+) -> anyhow::Result<Option<Position>> {
+    let pos = sqlx::query_as::<_, Position>(
+        "SELECT * FROM positions WHERE token_id = $1 AND status IN ('open', 'exiting') LIMIT 1",
+    )
+    .bind(token_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(pos)
+}
+
 /// Close a position with realized PnL and an exit reason (stop_loss / take_profit).
 pub async fn close_position_with_reason(
     pool: &PgPool,

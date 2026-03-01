@@ -6,6 +6,7 @@ use tokio::sync::broadcast;
 use polybot::api::router::create_router;
 use polybot::api::ws_types::WsMessage;
 use polybot::config::AppConfig;
+use polybot::execution::capital_pool::CapitalPool;
 use polybot::execution::copy_engine::{self, CopyEngineConfig};
 use polybot::execution::order_executor::OrderExecutor;
 use polybot::execution::position_sizer::SizingStrategy;
@@ -141,6 +142,16 @@ async fn main() -> anyhow::Result<()> {
     // --- Execution layer: copy engine ---
     let (signal_tx, signal_rx) = tokio::sync::mpsc::channel::<CopySignal>(500);
 
+    // --- Capital pool ---
+    // Try to seed with actual USDC balance, fall back to config.bankroll
+    let initial_balance = if let Some(ref bc) = balance_checker {
+        bc.get_usdc_balance().await.unwrap_or(config.bankroll)
+    } else {
+        config.bankroll
+    };
+    let capital_pool = CapitalPool::new(initial_balance);
+    tracing::info!(initial_balance = %initial_balance, "Capital pool initialized");
+
     if config.copy_enabled {
         let clob_client = if config.has_polymarket_auth() {
             let auth = PolymarketAuth::new(
@@ -184,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
         let engine_notifier = notifier.clone();
         let engine_balance = wallet.as_ref().map(|w| BalanceChecker::new(Arc::clone(w)));
         let engine_pause = Arc::clone(&pause_flag);
+        let engine_capital = capital_pool.clone();
 
         tokio::spawn(async move {
             copy_engine::run_copy_engine(
@@ -194,6 +206,7 @@ async fn main() -> anyhow::Result<()> {
                 engine_notifier,
                 engine_balance,
                 engine_pause,
+                engine_capital,
             )
             .await;
         });
@@ -203,6 +216,57 @@ async fn main() -> anyhow::Result<()> {
             bankroll = %config.bankroll,
             "Copy engine spawned"
         );
+
+        // --- Order fill poller (live mode only) ---
+        if !dry_run {
+            if let Some(ref tc) = trading_client {
+                let poller_db = db.clone();
+                let poller_tc = Arc::clone(tc);
+                let poller_capital = capital_pool.clone();
+                let poller_config = CopyEngineConfig {
+                    strategy: SizingStrategy::parse_strategy(&config.copy_strategy),
+                    bankroll: config.bankroll,
+                    base_amount: config.base_copy_amount,
+                    risk_limits: RiskLimits::default(),
+                    dry_run: false,
+                    default_stop_loss_pct: config.default_stop_loss_pct,
+                    default_take_profit_pct: config.default_take_profit_pct,
+                };
+
+                tokio::spawn(async move {
+                    services::order_fill_poller::run_order_fill_poller(
+                        poller_db,
+                        poller_tc,
+                        poller_capital,
+                        poller_config,
+                        10, // poll every 10 seconds
+                    )
+                    .await;
+                });
+                tracing::info!("Order fill poller spawned (interval=10s)");
+            }
+        }
+
+        // --- Balance sync task (every 60s) ---
+        if let Some(ref bc_arc) = balance_checker {
+            let sync_capital = capital_pool.clone();
+            let sync_bc = BalanceChecker::new(Arc::clone(bc_arc.wallet()));
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                loop {
+                    ticker.tick().await;
+                    match sync_bc.get_usdc_balance().await {
+                        Ok(balance) => {
+                            sync_capital.sync_balance(balance).await;
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Balance sync: failed to fetch USDC balance");
+                        }
+                    }
+                }
+            });
+            tracing::info!("Balance sync task spawned (interval=60s)");
+        }
     } else {
         tracing::info!("Copy engine disabled (COPY_ENABLED=false)");
         // Drop the receiver so pipeline doesn't block

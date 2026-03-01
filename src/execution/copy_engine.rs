@@ -11,9 +11,15 @@ use crate::models::CopySignal;
 use crate::polymarket::balance::BalanceChecker;
 use crate::services::notifier::Notifier;
 
-use super::order_executor::OrderExecutor;
+use super::capital_pool::CapitalPool;
+use super::order_executor::{ExecutionError, OrderExecutor};
 use super::position_sizer::{self, SizingStrategy};
 use super::risk_manager::{self, PendingOrder, PortfolioSnapshot, RiskLimits};
+
+/// Maximum number of retries for transient CLOB errors.
+const MAX_RETRIES: u32 = 3;
+/// Base delay for exponential backoff (doubles each retry).
+const RETRY_BASE_MS: u64 = 500;
 
 /// Configuration for the copy engine.
 #[derive(Debug, Clone)]
@@ -50,6 +56,7 @@ pub async fn run_copy_engine(
     notifier: Option<Arc<Notifier>>,
     balance_checker: Option<BalanceChecker>,
     pause_flag: Arc<AtomicBool>,
+    capital_pool: CapitalPool,
 ) {
     tracing::info!(
         strategy = %config.strategy,
@@ -84,6 +91,7 @@ pub async fn run_copy_engine(
             &config,
             notifier.as_deref(),
             balance_checker.as_ref(),
+            &capital_pool,
         )
         .await
         {
@@ -106,12 +114,20 @@ async fn process_signal(
     config: &CopyEngineConfig,
     notifier: Option<&Notifier>,
     balance_checker: Option<&BalanceChecker>,
+    capital_pool: &CapitalPool,
 ) -> anyhow::Result<()> {
-    // 1. Calculate position size
-    let signal_strength = signal.whale_win_rate; // Use win rate as signal strength
+    // 1. Calculate position size using dynamic available capital
+    let available_capital = capital_pool.available().await;
+    let bankroll_for_sizing = if available_capital > Decimal::ZERO {
+        available_capital
+    } else {
+        config.bankroll
+    };
+
+    let signal_strength = signal.whale_win_rate;
     let size = position_sizer::calculate_size(
         config.strategy,
-        config.bankroll,
+        bankroll_for_sizing,
         signal.whale_notional,
         signal.whale_win_rate,
         signal.whale_kelly,
@@ -127,6 +143,7 @@ async fn process_signal(
     tracing::info!(
         strategy = %config.strategy,
         size = %size,
+        available_capital = %available_capital,
         "Position sized"
     );
 
@@ -147,7 +164,8 @@ async fn process_signal(
                             return Ok(());
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, "Failed to check USDC balance, proceeding anyway");
+                            tracing::warn!(error = %e, "Failed to check USDC balance — skipping order");
+                            return Ok(());
                         }
                         _ => {}
                     }
@@ -164,7 +182,8 @@ async fn process_signal(
                             return Ok(());
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, "Failed to check token balance, proceeding anyway");
+                            tracing::warn!(error = %e, "Failed to check token balance — skipping order");
+                            return Ok(());
                         }
                         _ => {}
                     }
@@ -179,7 +198,7 @@ async fn process_signal(
     let daily_pnl = position_repo::get_daily_realized_pnl(pool).await.unwrap_or(Decimal::ZERO);
 
     let portfolio = PortfolioSnapshot {
-        bankroll: config.bankroll,
+        bankroll: bankroll_for_sizing,
         open_positions,
         daily_pnl,
     };
@@ -205,6 +224,17 @@ async fn process_signal(
 
     tracing::info!("Risk check passed");
 
+    // 3b. Reserve capital in the pool
+    let reserve_amount = size * signal.price;
+    if !capital_pool.reserve(signal.whale_trade_id, reserve_amount).await {
+        tracing::warn!(
+            wallet = %signal.wallet,
+            required = %reserve_amount,
+            "Capital pool reservation failed — skipping order"
+        );
+        return Ok(());
+    }
+
     // 4. Record order in DB
     let side_str = signal.side.to_string();
     let order = order_repo::insert_order(
@@ -221,83 +251,128 @@ async fn process_signal(
 
     tracing::info!(order_id = %order.id, "Order recorded");
 
-    // 5. Execute
-    match executor.execute(&signal.asset_id, &side_str, size, signal.price).await {
-        Ok(result) => {
-            tracing::info!(
-                order_id = %order.id,
-                fill_price = %result.fill_price,
-                slippage = %result.slippage,
-                clob_order_id = ?result.order_id,
-                "Order executed successfully"
-            );
+    // 5. Execute with retry for transient CLOB errors
+    let mut last_error: Option<ExecutionError> = None;
 
-            counter!("orders_filled").increment(1);
+    for attempt in 0..MAX_RETRIES {
+        match executor.execute(&signal.asset_id, &side_str, size, signal.price).await {
+            Ok(result) => {
+                tracing::info!(
+                    order_id = %order.id,
+                    fill_price = %result.fill_price,
+                    slippage = %result.slippage,
+                    clob_order_id = ?result.order_id,
+                    dry_run = config.dry_run,
+                    "Order executed successfully"
+                );
 
-            // Update order as filled
-            order_repo::fill_order(pool, order.id, result.fill_price, result.slippage).await?;
+                counter!("orders_filled").increment(1);
 
-            // Update/create position
-            let outcome = match signal.side {
-                crate::models::Side::Buy => "Yes",
-                crate::models::Side::Sell => "No",
-            };
+                if config.dry_run || result.order_id.is_none() {
+                    // Dry-run or no-wallet: immediate fill + position creation
+                    order_repo::fill_order(pool, order.id, result.fill_price, result.slippage).await?;
+                    capital_pool.confirm(&signal.whale_trade_id).await;
 
-            let position = position_repo::upsert_position(
-                pool,
-                &signal.market_id,
-                &signal.asset_id,
-                outcome,
-                size,
-                result.fill_price,
-            )
-            .await?;
+                    let outcome = match signal.side {
+                        crate::models::Side::Buy => "Yes",
+                        crate::models::Side::Sell => "No",
+                    };
 
-            // Set SL/TP on the position
-            if let Err(e) = position_repo::set_position_sl_tp(
-                pool,
-                position.id,
-                config.default_stop_loss_pct,
-                config.default_take_profit_pct,
-            )
+                    let position = position_repo::upsert_position(
+                        pool,
+                        &signal.market_id,
+                        &signal.asset_id,
+                        outcome,
+                        size,
+                        result.fill_price,
+                    )
+                    .await?;
+
+                    if let Err(e) = position_repo::set_position_sl_tp(
+                        pool,
+                        position.id,
+                        config.default_stop_loss_pct,
+                        config.default_take_profit_pct,
+                    )
+                    .await
+                    {
+                        tracing::warn!(error = %e, "Failed to set SL/TP on position");
+                    }
+
+                    tracing::info!(order_id = %order.id, "Position updated (dry-run)");
+                } else {
+                    // Live order: mark as submitted — fill poller will confirm
+                    let clob_id = result.order_id.as_deref().unwrap_or("");
+                    order_repo::mark_order_submitted(pool, order.id, clob_id).await?;
+
+                    tracing::info!(
+                        order_id = %order.id,
+                        clob_order_id = clob_id,
+                        "Order submitted to CLOB — awaiting fill confirmation"
+                    );
+                    // Capital stays reserved until fill poller confirms or cancels
+                }
+
+                // Notify order result
+                if let Some(n) = notifier {
+                    let market_question = market_repo::get_market_question(pool, &signal.market_id)
+                        .await
+                        .ok()
+                        .flatten();
+                    let msg = crate::services::notifier::format_order_result(&order, true, None, market_question.as_deref());
+                    n.send(&msg).await;
+                }
+
+                return Ok(());
+            }
+            Err(e) => {
+                // Only retry on transient CLOB errors
+                let retryable = matches!(&e, ExecutionError::ClobError(_));
+
+                if retryable && attempt + 1 < MAX_RETRIES {
+                    let delay_ms = RETRY_BASE_MS * 2u64.pow(attempt);
+                    tracing::warn!(
+                        order_id = %order.id,
+                        attempt = attempt + 1,
+                        delay_ms,
+                        error = %e,
+                        "Transient CLOB error — retrying"
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    last_error = Some(e);
+                    continue;
+                }
+
+                last_error = Some(e);
+                break;
+            }
+        }
+    }
+
+    // All retries exhausted or non-retryable error
+    let err_msg = last_error
+        .as_ref()
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| "unknown error".to_string());
+
+    tracing::error!(
+        order_id = %order.id,
+        error = %err_msg,
+        "Order execution failed (all retries exhausted)"
+    );
+
+    counter!("orders_failed").increment(1);
+    order_repo::fail_order(pool, order.id, &err_msg).await?;
+    capital_pool.release(&signal.whale_trade_id).await;
+
+    // Notify order failure
+    if let Some(n) = notifier {
+        let market_question = market_repo::get_market_question(pool, &signal.market_id)
             .await
-            {
-                tracing::warn!(error = %e, "Failed to set SL/TP on position");
-            }
-
-            tracing::info!(order_id = %order.id, "Position updated");
-
-            // Notify order result
-            if let Some(n) = notifier {
-                let market_question = market_repo::get_market_question(pool, &signal.market_id)
-                    .await
-                    .ok()
-                    .flatten();
-                let msg = crate::services::notifier::format_order_result(&order, true, None, market_question.as_deref());
-                n.send(&msg).await;
-            }
-        }
-        Err(e) => {
-            let err_msg = e.to_string();
-            tracing::error!(
-                order_id = %order.id,
-                error = %err_msg,
-                "Order execution failed"
-            );
-
-            counter!("orders_failed").increment(1);
-            order_repo::fail_order(pool, order.id, &err_msg).await?;
-
-            // Notify order failure
-            if let Some(n) = notifier {
-                let market_question = market_repo::get_market_question(pool, &signal.market_id)
-                    .await
-                    .ok()
-                    .flatten();
-                let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg), market_question.as_deref());
-                n.send(&msg).await;
-            }
-        }
+            .ok()
+            .flatten();
+        let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg), market_question.as_deref());
+        n.send(&msg).await;
     }
 
     Ok(())

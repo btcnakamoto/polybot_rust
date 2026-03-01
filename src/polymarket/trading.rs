@@ -87,6 +87,12 @@ impl TradingClient {
         Ok(())
     }
 
+    /// Query a single order by CLOB order ID.
+    pub async fn get_order(&self, order_id: &str) -> anyhow::Result<OpenOrderResponse> {
+        let order = self.wallet.client().order(order_id).await?;
+        Ok(order)
+    }
+
     /// Query all open orders (first page).
     pub async fn get_open_orders(&self) -> anyhow::Result<Vec<OpenOrderResponse>> {
         let page = self

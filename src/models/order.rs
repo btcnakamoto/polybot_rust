@@ -21,11 +21,13 @@ pub struct CopyOrder {
     pub error_message: Option<String>,
     pub placed_at: Option<DateTime<Utc>>,
     pub filled_at: Option<DateTime<Utc>>,
+    pub clob_order_id: Option<String>,
 }
 
 /// Order status constants.
 pub mod order_status {
     pub const PENDING: &str = "pending";
+    pub const SUBMITTED: &str = "submitted";
     pub const FILLED: &str = "filled";
     pub const PARTIAL: &str = "partial";
     pub const CANCELLED: &str = "cancelled";

@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::time::{interval, Duration};
 
-use crate::db::{market_repo, position_repo};
+use crate::db::{market_repo, order_repo, position_repo};
 use crate::polymarket::clob_client::ClobClient;
 use crate::polymarket::trading::TradingClient;
 use crate::services::notifier::Notifier;
@@ -47,6 +47,15 @@ pub async fn run_position_monitor(
         }
 
         for pos in &positions {
+            // Skip positions that already have an exit order in flight
+            if pos.status.as_deref() == Some("exiting") {
+                tracing::debug!(
+                    token_id = %pos.token_id,
+                    "Position is exiting — skipping (fill poller will close)"
+                );
+                continue;
+            }
+
             // Fetch current best price from orderbook
             let current_price = match clob_client.get_order_book(&pos.token_id).await {
                 Ok(book) => {
@@ -73,9 +82,12 @@ pub async fn run_position_monitor(
                 }
             };
 
-            // Update current price in DB
-            if let Err(e) = position_repo::update_position_price(&pool, pos.id, current_price).await {
-                tracing::warn!(error = %e, "Failed to update position price");
+            // Compute unrealized PnL and update price + pnl in DB
+            let unrealized_pnl = (current_price - pos.avg_entry_price) * pos.size;
+            if let Err(e) = position_repo::update_position_price_and_pnl(
+                &pool, pos.id, current_price, unrealized_pnl,
+            ).await {
+                tracing::warn!(error = %e, "Failed to update position price/pnl");
             }
 
             // Calculate PnL percentage
@@ -130,6 +142,44 @@ pub async fn run_position_monitor(
                                     order_id = %resp.order_id,
                                     "Exit order placed successfully"
                                 );
+
+                                // Record exit order in copy_orders and mark as submitted
+                                match order_repo::insert_order(
+                                    &pool,
+                                    // Use a nil UUID since there's no whale_trade_id for exits
+                                    uuid::Uuid::nil(),
+                                    &pos.market_id,
+                                    &pos.token_id,
+                                    "SELL",
+                                    pos.size,
+                                    current_price,
+                                    "exit",
+                                )
+                                .await
+                                {
+                                    Ok(exit_order) => {
+                                        let clob_id = if resp.order_id.is_empty() {
+                                            ""
+                                        } else {
+                                            &resp.order_id
+                                        };
+                                        if let Err(e) = order_repo::mark_order_submitted(
+                                            &pool, exit_order.id, clob_id,
+                                        ).await {
+                                            tracing::error!(error = %e, "Failed to mark exit order as submitted");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "Failed to record exit order in DB");
+                                    }
+                                }
+
+                                // Mark position as exiting — fill poller will close it
+                                if let Err(e) = position_repo::mark_position_exiting(
+                                    &pool, pos.id, reason,
+                                ).await {
+                                    tracing::error!(error = %e, "Failed to mark position as exiting");
+                                }
                             } else {
                                 let msg = resp.error_msg.unwrap_or_default();
                                 tracing::error!(
@@ -164,40 +214,40 @@ pub async fn run_position_monitor(
                     reason = reason,
                     "[DRY-RUN] Would place exit order"
                 );
-            }
 
-            // Close position in DB
-            let realized_pnl = (current_price - pos.avg_entry_price) * pos.size;
-            if let Err(e) =
-                position_repo::close_position_with_reason(&pool, pos.id, realized_pnl, reason).await
-            {
-                tracing::error!(error = %e, "Failed to close position in DB");
-                continue;
-            }
+                // In dry-run mode, close position immediately (no CLOB order to track)
+                let realized_pnl = (current_price - pos.avg_entry_price) * pos.size;
+                if let Err(e) =
+                    position_repo::close_position_with_reason(&pool, pos.id, realized_pnl, reason).await
+                {
+                    tracing::error!(error = %e, "Failed to close position in DB");
+                    continue;
+                }
 
-            tracing::info!(
-                position_id = %pos.id,
-                reason = reason,
-                realized_pnl = %realized_pnl,
-                "Position closed"
-            );
-
-            // Notify
-            if let Some(ref n) = notifier {
-                let market_question = market_repo::get_market_question(&pool, &pos.market_id)
-                    .await
-                    .ok()
-                    .flatten();
-                let msg = crate::services::notifier::format_position_exit(
-                    market_question.as_deref(),
-                    &pos.market_id,
-                    reason,
-                    pos.avg_entry_price,
-                    current_price,
-                    realized_pnl,
-                    pnl_pct,
+                tracing::info!(
+                    position_id = %pos.id,
+                    reason = reason,
+                    realized_pnl = %realized_pnl,
+                    "Position closed (dry-run)"
                 );
-                n.send(&msg).await;
+
+                // Notify
+                if let Some(ref n) = notifier {
+                    let market_question = market_repo::get_market_question(&pool, &pos.market_id)
+                        .await
+                        .ok()
+                        .flatten();
+                    let msg = crate::services::notifier::format_position_exit(
+                        market_question.as_deref(),
+                        &pos.market_id,
+                        reason,
+                        pos.avg_entry_price,
+                        current_price,
+                        realized_pnl,
+                        pnl_pct,
+                    );
+                    n.send(&msg).await;
+                }
             }
         }
     }
