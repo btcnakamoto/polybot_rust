@@ -179,9 +179,9 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(10),
             whale_seeder_min_trades: env::var("WHALE_SEEDER_MIN_TRADES")
-                .unwrap_or_else(|_| "100".into())
+                .unwrap_or_else(|_| "50".into())
                 .parse()
-                .unwrap_or(100),
+                .unwrap_or(50),
 
             whale_poller_interval_secs: env::var("WHALE_POLLER_INTERVAL")
                 .unwrap_or_else(|_| "60".into())

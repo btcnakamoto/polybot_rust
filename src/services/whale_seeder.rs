@@ -10,7 +10,10 @@ use crate::polymarket::data_client::UserTrade;
 use crate::polymarket::DataClient;
 
 /// Maximum number of days since last trade to consider a whale "active".
+/// Stale-deactivation uses this threshold; seeder discovery uses a more
+/// lenient window (SEEDER_RECENCY_DAYS) since the API only returns 200 trades.
 const MAX_INACTIVE_DAYS: i64 = 30;
+const SEEDER_RECENCY_DAYS: i64 = 90;
 
 /// Run the whale seeder periodically. Discovers new whales from the Polymarket
 /// leaderboard and deactivates stale ones that haven't traded recently.
@@ -166,7 +169,9 @@ async fn seed_and_cleanup(
             continue;
         }
 
-        // Anti-signal filter 3: Recency — most recent trade must be within MAX_INACTIVE_DAYS
+        // Anti-signal filter 3: Recency — most recent trade must be within SEEDER_RECENCY_DAYS.
+        // Note: stale-deactivation (MAX_INACTIVE_DAYS=30) will later prune whales that go
+        // quiet, so a wider discovery window here is safe.
         let most_recent_trade = user_trades
             .iter()
             .filter_map(|t| parse_trade_timestamp(t.timestamp.as_ref()))
@@ -175,7 +180,7 @@ async fn seed_and_cleanup(
         match most_recent_trade {
             Some(latest) => {
                 let days_since = (Utc::now() - latest).num_days();
-                if days_since > MAX_INACTIVE_DAYS {
+                if days_since > SEEDER_RECENCY_DAYS {
                     tracing::debug!(
                         address = %address,
                         days_since = days_since,
