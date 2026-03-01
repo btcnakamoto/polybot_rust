@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+
 use chrono::Utc;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 
 use crate::config::AppConfig;
 use crate::db::{trade_repo, whale_repo};
+use crate::polymarket::data_client::UserTrade;
 use crate::polymarket::DataClient;
 
 /// Maximum number of days since last trade to consider a whale "active".
@@ -131,6 +134,7 @@ async fn seed_and_cleanup(
     let mut seeded_count = 0u32;
     let mut skipped_inactive = 0u32;
     let mut skipped_low_trades = 0u32;
+    let mut skipped_bot_mm = 0u32;
 
     for (rank, entry) in &filtered_entries {
         if seeded_count as usize >= slots_available {
@@ -187,6 +191,17 @@ async fn seed_and_cleanup(
                 skipped_inactive += 1;
                 continue;
             }
+        }
+
+        // Anti-signal filter 4: Bot/MM detection from trade patterns
+        if let Some(reason) = detect_bot_or_mm(&user_trades) {
+            tracing::info!(
+                address = %address,
+                reason = %reason,
+                "Skipping suspected bot/MM whale"
+            );
+            skipped_bot_mm += 1;
+            continue;
         }
 
         let label = format!("leaderboard_rank_{}", rank + 1);
@@ -286,10 +301,81 @@ async fn seed_and_cleanup(
         seeded = seeded_count,
         skipped_inactive = skipped_inactive,
         skipped_low_trades = skipped_low_trades,
+        skipped_bot_mm = skipped_bot_mm,
         "Whale seeder cycle complete",
     );
 
     Ok(())
+}
+
+/// Detect bot or market-maker patterns from API trade data.
+/// Returns `Some(reason)` if the wallet should be skipped.
+fn detect_bot_or_mm(trades: &[UserTrade]) -> Option<String> {
+    if trades.len() < 20 {
+        return None;
+    }
+
+    // Parse timestamps to compute trading frequency
+    let timestamps: Vec<_> = trades
+        .iter()
+        .filter_map(|t| parse_trade_timestamp(t.timestamp.as_ref()))
+        .collect();
+
+    if timestamps.len() >= 20 {
+        let oldest = *timestamps.iter().min().unwrap();
+        let newest = *timestamps.iter().max().unwrap();
+        let span_days = (newest - oldest).num_days().max(1);
+
+        // Bot detection: if 200 trades span fewer than 7 days → >28 trades/day average
+        if trades.len() >= 100 && span_days < 7 {
+            return Some(format!(
+                "bot: {} trades in {} days ({:.0} trades/day)",
+                trades.len(),
+                span_days,
+                trades.len() as f64 / span_days as f64,
+            ));
+        }
+
+        // Also catch high frequency over longer spans: >50 trades/day
+        let trades_per_day = trades.len() as f64 / span_days as f64;
+        if trades_per_day > 50.0 {
+            return Some(format!(
+                "bot: {:.0} trades/day over {} days",
+                trades_per_day, span_days,
+            ));
+        }
+    }
+
+    // Market-maker detection: >40% of markets have both BUY and SELL
+    let mut market_buy: HashSet<String> = HashSet::new();
+    let mut market_sell: HashSet<String> = HashSet::new();
+
+    for trade in trades {
+        let market = trade.market.as_deref().unwrap_or("").to_string();
+        if market.is_empty() {
+            continue;
+        }
+        match trade.side.as_deref().unwrap_or("").to_uppercase().as_str() {
+            "BUY" => { market_buy.insert(market); }
+            "SELL" => { market_sell.insert(market); }
+            _ => {}
+        }
+    }
+
+    let dual_side = market_buy.intersection(&market_sell).count();
+    let total_markets = market_buy.union(&market_sell).count();
+
+    if total_markets >= 5 {
+        let dual_ratio = dual_side as f64 / total_markets as f64;
+        if dual_ratio > 0.40 {
+            return Some(format!(
+                "market_maker: {}/{} markets ({:.0}%) have dual-side activity",
+                dual_side, total_markets, dual_ratio * 100.0,
+            ));
+        }
+    }
+
+    None
 }
 
 fn parse_trade_timestamp(ts: Option<&serde_json::Value>) -> Option<chrono::DateTime<Utc>> {
