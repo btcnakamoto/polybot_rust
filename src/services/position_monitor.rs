@@ -1,11 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use chrono::Utc;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::time::{interval, Duration};
 
-use crate::db::{market_repo, order_repo, position_repo};
+use crate::db::{config_repo, market_repo, order_repo, position_repo};
 use crate::polymarket::clob_client::ClobClient;
 use crate::polymarket::trading::TradingClient;
 use crate::services::notifier::Notifier;
@@ -44,6 +45,23 @@ pub async fn run_position_monitor(
         if positions.is_empty() {
             tracing::debug!("Position monitor: no open positions");
             continue;
+        }
+
+        // Read runtime config for trailing stop and time exit
+        let mut trailing_stop_pct = Decimal::new(10, 0); // default 10%
+        let mut max_hold_days: i64 = 7; // default 7 days
+        if let Ok(entries) = config_repo::get_all_config(&pool).await {
+            for entry in &entries {
+                match entry.key.as_str() {
+                    "trailing_stop_pct" => {
+                        if let Ok(v) = entry.value.parse() { trailing_stop_pct = v; }
+                    }
+                    "max_position_hold_days" => {
+                        if let Ok(v) = entry.value.parse() { max_hold_days = v; }
+                    }
+                    _ => {}
+                }
+            }
         }
 
         for pos in &positions {
@@ -98,15 +116,38 @@ pub async fn run_position_monitor(
                 (current_price - pos.avg_entry_price) / pos.avg_entry_price * Decimal::from(100);
 
             let stop_loss = pos.stop_loss_pct.unwrap_or(Decimal::new(1500, 2)); // 15.00
-            let take_profit = pos.take_profit_pct.unwrap_or(Decimal::new(5000, 2)); // 50.00
+            let take_profit = pos.take_profit_pct.unwrap_or(Decimal::new(2000, 2)); // 20.00
 
             let exit_reason = if pnl_pct <= -stop_loss {
                 Some("stop_loss")
             } else if pnl_pct >= take_profit {
                 Some("take_profit")
             } else {
-                None
+                // Trailing stop: only active if price has been above entry (peak > entry)
+                let peak = pos.peak_price.unwrap_or(pos.avg_entry_price);
+                if peak > pos.avg_entry_price && trailing_stop_pct > Decimal::ZERO {
+                    let trailing_level =
+                        peak * (Decimal::ONE - trailing_stop_pct / Decimal::ONE_HUNDRED);
+                    if current_price <= trailing_level {
+                        Some("trailing_stop")
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
             };
+
+            // Time-based exit: close if held too long
+            let exit_reason = exit_reason.or_else(|| {
+                if let Some(opened) = pos.opened_at {
+                    let hold_days = (Utc::now() - opened).num_days();
+                    if max_hold_days > 0 && hold_days >= max_hold_days {
+                        return Some("time_exit");
+                    }
+                }
+                None
+            });
 
             let Some(reason) = exit_reason else {
                 tracing::debug!(

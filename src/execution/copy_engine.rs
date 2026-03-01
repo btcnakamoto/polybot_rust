@@ -44,7 +44,7 @@ impl Default for CopyEngineConfig {
             risk_limits: RiskLimits::default(),
             dry_run: true,
             default_stop_loss_pct: Decimal::new(1500, 2),  // 15.00%
-            default_take_profit_pct: Decimal::new(5000, 2), // 50.00%
+            default_take_profit_pct: Decimal::new(2000, 2), // 20.00%
             maker_mode: true,
             maker_order_ttl_secs: 600,
         }
@@ -120,6 +120,11 @@ async fn process_signal(
     balance_checker: Option<&BalanceChecker>,
     capital_pool: &CapitalPool,
 ) -> anyhow::Result<()> {
+    // 0. Whale exit shortcut — bypass all sizing/risk gates
+    if signal.is_whale_exit {
+        return handle_whale_exit(signal, pool, executor, config, notifier).await;
+    }
+
     // 1. Calculate position size using dynamic available capital
     let available_capital = capital_pool.available().await;
     let bankroll_for_sizing = if available_capital > Decimal::ZERO {
@@ -394,6 +399,115 @@ async fn process_signal(
             .flatten();
         let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg), market_question.as_deref());
         n.send(&msg).await;
+    }
+
+    Ok(())
+}
+
+/// Handle a whale exit signal: sell our entire position in this token.
+/// Bypasses all sizing/risk gates since we're following the whale out.
+async fn handle_whale_exit(
+    signal: &CopySignal,
+    pool: &PgPool,
+    executor: &OrderExecutor,
+    config: &CopyEngineConfig,
+    notifier: Option<&Notifier>,
+) -> anyhow::Result<()> {
+    let pos = match position_repo::get_position_by_token_id(pool, &signal.asset_id).await? {
+        Some(p) if p.status.as_deref() == Some("open") => p,
+        _ => {
+            tracing::debug!(
+                token_id = %signal.asset_id,
+                "Whale exit: no open position for this token — skipping"
+            );
+            return Ok(());
+        }
+    };
+
+    tracing::info!(
+        wallet = %signal.wallet,
+        token_id = %signal.asset_id,
+        size = %pos.size,
+        "Whale exit: closing position"
+    );
+
+    // Record exit order
+    let order = order_repo::insert_order(
+        pool,
+        signal.whale_trade_id,
+        &pos.market_id,
+        &pos.token_id,
+        "SELL",
+        pos.size,
+        signal.price,
+        "exit",
+    )
+    .await?;
+
+    // Execute sell via the order executor (handles dry-run vs live, orderbook price, etc.)
+    match executor.execute(&pos.token_id, "SELL", pos.size, signal.price).await {
+        Ok(result) => {
+            if config.dry_run || result.order_id.is_none() {
+                // Dry-run: fill immediately and close position
+                order_repo::fill_order(pool, order.id, result.fill_price, result.slippage).await?;
+                let realized_pnl = (result.fill_price - pos.avg_entry_price) * pos.size;
+                position_repo::close_position_with_reason(pool, pos.id, realized_pnl, "whale_exit")
+                    .await?;
+
+                tracing::info!(
+                    position_id = %pos.id,
+                    realized_pnl = %realized_pnl,
+                    "Whale exit: position closed (dry-run)"
+                );
+            } else {
+                // Live: mark as submitted, fill poller will close
+                let clob_id = result.order_id.as_deref().unwrap_or("");
+                order_repo::mark_order_submitted(pool, order.id, clob_id).await?;
+                position_repo::mark_position_exiting(pool, pos.id, "whale_exit").await?;
+
+                tracing::info!(
+                    position_id = %pos.id,
+                    clob_order_id = clob_id,
+                    "Whale exit: exit order submitted to CLOB"
+                );
+            }
+
+            // Notify
+            if let Some(n) = notifier {
+                let market_question = market_repo::get_market_question(pool, &pos.market_id)
+                    .await
+                    .ok()
+                    .flatten();
+                let pnl_pct = if pos.avg_entry_price > Decimal::ZERO {
+                    (result.fill_price - pos.avg_entry_price) / pos.avg_entry_price
+                        * Decimal::from(100)
+                } else {
+                    Decimal::ZERO
+                };
+                let realized_pnl = (result.fill_price - pos.avg_entry_price) * pos.size;
+                let msg = crate::services::notifier::format_position_exit(
+                    market_question.as_deref(),
+                    &pos.market_id,
+                    "whale_exit",
+                    pos.avg_entry_price,
+                    result.fill_price,
+                    realized_pnl,
+                    pnl_pct,
+                );
+                n.send(&msg).await;
+            }
+
+            counter!("whale_exits_executed").increment(1);
+        }
+        Err(e) => {
+            let err_msg = e.to_string();
+            tracing::error!(
+                error = %err_msg,
+                token_id = %signal.asset_id,
+                "Whale exit: failed to execute sell order"
+            );
+            order_repo::fail_order(pool, order.id, &err_msg).await?;
+        }
     }
 
     Ok(())

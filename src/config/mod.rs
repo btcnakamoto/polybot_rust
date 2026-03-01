@@ -207,9 +207,9 @@ impl AppConfig {
                 .parse()
                 .unwrap_or(Decimal::new(1500, 2)),
             default_take_profit_pct: env::var("TAKE_PROFIT_PCT")
-                .unwrap_or_else(|_| "50.0".into())
+                .unwrap_or_else(|_| "20.0".into())
                 .parse()
-                .unwrap_or(Decimal::new(5000, 2)),
+                .unwrap_or(Decimal::new(2000, 2)),
             position_monitor_interval_secs: env::var("POSITION_MONITOR_INTERVAL")
                 .unwrap_or_else(|_| "30".into())
                 .parse()

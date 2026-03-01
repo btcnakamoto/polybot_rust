@@ -24,4 +24,6 @@ pub struct CopySignal {
     pub whale_kelly: Decimal,
     /// Whale's notional size.
     pub whale_notional: Decimal,
+    /// True if this signal represents a whale exiting a position we also hold.
+    pub is_whale_exit: bool,
 }

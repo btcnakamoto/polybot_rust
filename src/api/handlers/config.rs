@@ -29,6 +29,8 @@ const ALLOWED_KEYS: &[&str] = &[
     "tracked_whale_min_notional",
     "max_daily_loss",
     "max_open_positions",
+    "trailing_stop_pct",
+    "max_position_hold_days",
 ];
 
 #[derive(Serialize)]
@@ -60,6 +62,8 @@ fn defaults_from_config(state: &AppState) -> HashMap<String, String> {
     m.insert("tracked_whale_min_notional".into(), c.tracked_whale_min_notional.to_string());
     m.insert("max_daily_loss".into(), c.max_daily_loss.to_string());
     m.insert("max_open_positions".into(), crate::execution::risk_manager::RiskLimits::default().max_open_positions.to_string());
+    m.insert("trailing_stop_pct".into(), "10".into());
+    m.insert("max_position_hold_days".into(), "7".into());
     m
 }
 

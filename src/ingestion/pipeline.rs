@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-use crate::db::{basket_repo, config_repo, market_repo, trade_repo, whale_repo};
+use crate::db::{basket_repo, config_repo, market_repo, position_repo, trade_repo, whale_repo};
 use crate::intelligence::basket::{
     auto_assign_to_baskets, check_admission, check_basket_consensus, infer_market_category,
     AdmissionResult,
@@ -110,6 +110,34 @@ pub async fn process_trade_event(
 
     // Update last_trade_at
     whale_repo::touch_whale_last_trade(pool, whale.id, event.timestamp).await?;
+
+    // Whale exit detection: if whale is SELLing a token we hold, emit exit signal immediately
+    if event.side == Side::Sell {
+        if let Ok(Some(pos)) = position_repo::get_position_by_token_id(pool, &event.asset_id).await {
+            if pos.status.as_deref() == Some("open") {
+                if let Some(tx) = signal_tx {
+                    let exit_signal = CopySignal {
+                        whale_trade_id: trade.id,
+                        wallet: event.wallet.clone(),
+                        market_id: event.market_id.clone(),
+                        asset_id: event.asset_id.clone(),
+                        side: event.side,
+                        price: event.price,
+                        whale_win_rate: Decimal::ZERO,
+                        whale_kelly: Decimal::ZERO,
+                        whale_notional: event.notional,
+                        is_whale_exit: true,
+                    };
+                    let _ = tx.send(exit_signal).await;
+                    tracing::info!(
+                        wallet = %event.wallet,
+                        token_id = %event.asset_id,
+                        "Whale exit detected — exit signal emitted"
+                    );
+                }
+            }
+        }
+    }
 
     // Step 4: Fetch trade history and re-score
     let all_trades = trade_repo::get_trades_by_whale(pool, whale.id).await?;
@@ -438,6 +466,7 @@ pub async fn process_trade_event(
                 whale_win_rate: score.win_rate,
                 whale_kelly: score.kelly_fraction,
                 whale_notional: event.notional,
+                is_whale_exit: false,
             };
 
             if let Err(e) = tx.send(signal).await {
@@ -539,6 +568,7 @@ pub async fn process_trade_event(
                                 whale_win_rate: score.win_rate,
                                 whale_kelly: score.kelly_fraction,
                                 whale_notional: event.notional,
+                                is_whale_exit: false,
                             };
 
                             if let Err(e) = tx.send(basket_signal).await {

@@ -170,7 +170,7 @@ pub async fn update_position_price(
     Ok(())
 }
 
-/// Update the current price, unrealized PnL, and last_price_update for a position.
+/// Update the current price, unrealized PnL, peak_price, and last_price_update for a position.
 pub async fn update_position_price_and_pnl(
     pool: &PgPool,
     position_id: uuid::Uuid,
@@ -180,7 +180,10 @@ pub async fn update_position_price_and_pnl(
     sqlx::query(
         r#"
         UPDATE positions
-        SET current_price = $2, unrealized_pnl = $3, last_price_update = NOW()
+        SET current_price = $2,
+            unrealized_pnl = $3,
+            last_price_update = NOW(),
+            peak_price = GREATEST(COALESCE(peak_price, avg_entry_price), $2)
         WHERE id = $1
         "#,
     )

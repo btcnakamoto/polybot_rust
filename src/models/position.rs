@@ -24,4 +24,5 @@ pub struct Position {
     pub last_price_update: Option<DateTime<Utc>>,
     pub exit_reason: Option<String>,
     pub exited_at: Option<DateTime<Utc>>,
+    pub peak_price: Option<Decimal>,
 }
