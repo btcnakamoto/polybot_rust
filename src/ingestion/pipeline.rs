@@ -330,7 +330,8 @@ pub async fn process_trade_event(
     let is_valid_classification = classification != Classification::Bot
         && classification != Classification::MarketMaker;
 
-    let has_validated_scores = resolved_count >= config.min_resolved_for_signal;
+    // Seeder-vetted whales have leaderboard-validated scores — skip resolved gate
+    let has_validated_scores = is_seeder_vetted || resolved_count >= config.min_resolved_for_signal;
 
     // Effective total trades: max of observed trades and seeded/leaderboard total
     let effective_total_trades = (all_trades.len() as i32).max(score.total_trades);
