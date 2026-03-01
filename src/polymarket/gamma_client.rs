@@ -28,9 +28,9 @@ pub struct GammaMarket {
     pub slug: Option<String>,
     #[serde(default)]
     pub events: Vec<GammaEvent>,
-    /// JSON array of outcome labels, e.g. ["Yes","No"] or ["G2 Esports","Karmine Corp"]
+    /// Outcome labels, e.g. ["Yes","No"] or ["G2 Esports","Karmine Corp"]
     #[serde(default)]
-    pub outcomes: Option<String>,
+    pub outcomes: Vec<String>,
     /// Stringified JSON array of token IDs, e.g. "[\"token1\", \"token2\"]"
     #[serde(default, alias = "clobTokenIds")]
     pub clob_token_ids: Option<String>,
@@ -60,10 +60,13 @@ impl GammaMarket {
             .or(self.slug.as_deref())
     }
 
-    /// Serialize the outcomes field for storage.
-    /// The Gamma API returns outcomes as a JSON array string like `["Yes","No"]`.
-    pub fn outcomes_str(&self) -> Option<&str> {
-        self.outcomes.as_deref()
+    /// Serialize outcomes to a JSON string for DB storage.
+    pub fn outcomes_json(&self) -> Option<String> {
+        if self.outcomes.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&self.outcomes).ok()
+        }
     }
 }
 

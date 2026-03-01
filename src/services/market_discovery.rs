@@ -66,7 +66,7 @@ pub async fn run_market_discovery(
                                 market.end_date_iso.as_deref(),
                                 market.clob_token_ids.as_deref(),
                                 market.event_slug(),
-                                market.outcomes_str(),
+                                market.outcomes_json().as_deref(),
                             )
                             .await
                             {
