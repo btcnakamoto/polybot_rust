@@ -95,7 +95,7 @@ async fn seed_and_cleanup(
     );
 
     // Step 3: Fetch leaderboard and seed new whales
-    let fetch_count = 200u32;
+    let fetch_count = 500u32;
     let entries = match data_client.get_leaderboard(fetch_count).await {
         Ok(e) => e,
         Err(e) => {

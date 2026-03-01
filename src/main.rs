@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
         let seeder_data_client = DataClient::new(reqwest::Client::new());
         let seeder_db = db.clone();
         let seeder_config = config.clone();
-        let seeder_interval = 6 * 3600; // Re-check every 6 hours
+        let seeder_interval = 3600; // Re-check every hour
         tokio::spawn(async move {
             services::whale_seeder::run_whale_seeder_loop(
                 seeder_data_client,
