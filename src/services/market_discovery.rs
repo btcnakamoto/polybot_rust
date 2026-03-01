@@ -65,7 +65,7 @@ pub async fn run_market_discovery(
                                 liquidity,
                                 market.end_date_iso.as_deref(),
                                 market.clob_token_ids.as_deref(),
-                                market.slug.as_deref(),
+                                market.event_slug(),
                             )
                             .await
                             {
@@ -133,7 +133,7 @@ async fn upsert_active_market(
             liquidity = EXCLUDED.liquidity,
             end_date_iso = EXCLUDED.end_date_iso,
             clob_token_ids = EXCLUDED.clob_token_ids,
-            slug = COALESCE(EXCLUDED.slug, active_markets.slug),
+            slug = EXCLUDED.slug,
             updated_at = NOW()
         "#,
     )

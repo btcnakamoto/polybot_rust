@@ -14,12 +14,20 @@ pub enum GammaClientError {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GammaEvent {
+    #[serde(default)]
+    pub slug: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GammaMarket {
     #[serde(alias = "conditionId")]
     pub condition_id: String,
     pub question: String,
     #[serde(default)]
     pub slug: Option<String>,
+    #[serde(default)]
+    pub events: Vec<GammaEvent>,
     /// Stringified JSON array of token IDs, e.g. "[\"token1\", \"token2\"]"
     #[serde(default, alias = "clobTokenIds")]
     pub clob_token_ids: Option<String>,
@@ -38,6 +46,15 @@ impl GammaMarket {
             .as_deref()
             .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
             .unwrap_or_default()
+    }
+
+    /// Get the event-level slug (for polymarket.com/event/{slug} URLs).
+    /// Falls back to the market-level slug if no event slug is available.
+    pub fn event_slug(&self) -> Option<&str> {
+        self.events
+            .first()
+            .and_then(|e| e.slug.as_deref())
+            .or(self.slug.as_deref())
     }
 }
 
