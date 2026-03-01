@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Instant;
+use rust_decimal::Decimal;
 use tokio::sync::broadcast;
 
 use polybot::api::router::create_router;
@@ -143,9 +144,14 @@ async fn main() -> anyhow::Result<()> {
     let (signal_tx, signal_rx) = tokio::sync::mpsc::channel::<CopySignal>(500);
 
     // --- Capital pool ---
-    // Try to seed with actual USDC balance, fall back to config.bankroll
-    let initial_balance = if let Some(ref bc) = balance_checker {
-        bc.get_usdc_balance().await.unwrap_or(config.bankroll)
+    // In dry-run mode always use config.bankroll (no real USDC needed).
+    // In live mode use actual USDC balance, falling back to bankroll if query fails.
+    let dry_run_mode = config.dry_run || trading_client.is_none();
+    let initial_balance = if dry_run_mode {
+        config.bankroll
+    } else if let Some(ref bc) = balance_checker {
+        let bal = bc.get_usdc_balance().await.unwrap_or(config.bankroll);
+        if bal == Decimal::ZERO { config.bankroll } else { bal }
     } else {
         config.bankroll
     };
