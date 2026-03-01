@@ -131,12 +131,15 @@ pub async fn get_market_question(pool: &PgPool, market_id: &str) -> anyhow::Resu
     Ok(row.map(|r| r.0))
 }
 
-/// Get slug and question for a market by condition_id from active_markets.
-pub async fn get_market_info(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<(Option<String>, Option<String>)>> {
+/// Get slug and question for a market by condition_id or token_id from active_markets.
+/// Handles hex condition_ids (with/without `0x` prefix) and decimal token_ids
+/// (from chain listener events).
+pub async fn get_market_info(pool: &PgPool, market_id: &str) -> anyhow::Result<Option<(Option<String>, Option<String>)>> {
+    // Try as condition_id first
     let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT slug, question FROM active_markets WHERE condition_id = $1",
     )
-    .bind(condition_id)
+    .bind(market_id)
     .fetch_optional(pool)
     .await?;
 
@@ -145,18 +148,30 @@ pub async fn get_market_info(pool: &PgPool, condition_id: &str) -> anyhow::Resul
     }
 
     // Retry with 0x prefix
-    if !condition_id.starts_with("0x") {
-        let prefixed = format!("0x{}", condition_id);
+    if !market_id.starts_with("0x") {
+        let prefixed = format!("0x{}", market_id);
         let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
             "SELECT slug, question FROM active_markets WHERE condition_id = $1",
         )
         .bind(&prefixed)
         .fetch_optional(pool)
         .await?;
-        return Ok(row);
+
+        if row.is_some() {
+            return Ok(row);
+        }
     }
 
-    Ok(None)
+    // Fallback: search by token_id within clob_token_ids JSON array.
+    // Chain listener events use decimal token_ids as market_id.
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT slug, question FROM active_markets WHERE clob_token_ids LIKE '%' || $1 || '%'",
+    )
+    .bind(market_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row)
 }
 
 /// Get a single market outcome by market_id.
