@@ -253,25 +253,27 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        // --- Balance sync task (every 60s) ---
-        if let Some(ref bc_arc) = balance_checker {
-            let sync_capital = capital_pool.clone();
-            let sync_bc = BalanceChecker::new(Arc::clone(bc_arc.wallet()));
-            tokio::spawn(async move {
-                let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(60));
-                loop {
-                    ticker.tick().await;
-                    match sync_bc.get_usdc_balance().await {
-                        Ok(balance) => {
-                            sync_capital.sync_balance(balance).await;
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Balance sync: failed to fetch USDC balance");
+        // --- Balance sync task (every 60s, live mode only) ---
+        if !dry_run {
+            if let Some(ref bc_arc) = balance_checker {
+                let sync_capital = capital_pool.clone();
+                let sync_bc = BalanceChecker::new(Arc::clone(bc_arc.wallet()));
+                tokio::spawn(async move {
+                    let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(60));
+                    loop {
+                        ticker.tick().await;
+                        match sync_bc.get_usdc_balance().await {
+                            Ok(balance) => {
+                                sync_capital.sync_balance(balance).await;
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Balance sync: failed to fetch USDC balance");
+                            }
                         }
                     }
-                }
-            });
-            tracing::info!("Balance sync task spawned (interval=60s)");
+                });
+                tracing::info!("Balance sync task spawned (interval=60s)");
+            }
         }
     } else {
         tracing::info!("Copy engine disabled (COPY_ENABLED=false)");
