@@ -62,6 +62,12 @@ export interface Position {
   status?: string;
   opened_at?: string;
   closed_at?: string;
+  stop_loss_pct?: string;
+  take_profit_pct?: string;
+  exit_reason?: string;
+  exited_at?: string;
+  market_slug?: string;
+  market_question?: string;
 }
 
 export interface DashboardSummary {

@@ -16,9 +16,10 @@ use tokio::sync::broadcast;
 
 use crate::api::ws_types::WsMessage;
 use crate::config::AppConfig;
-use crate::polymarket::wallet::PolymarketWallet;
-use crate::polymarket::trading::TradingClient;
 use crate::polymarket::balance::BalanceChecker;
+use crate::polymarket::clob_client::ClobClient;
+use crate::polymarket::trading::TradingClient;
+use crate::polymarket::wallet::PolymarketWallet;
 use crate::services::notifier::Notifier;
 
 #[derive(Clone)]
@@ -31,6 +32,7 @@ pub struct AppState {
     pub wallet: Option<Arc<PolymarketWallet>>,
     pub trading_client: Option<Arc<TradingClient>>,
     pub balance_checker: Option<Arc<BalanceChecker>>,
+    pub clob_client: Option<Arc<ClobClient>>,
     /// Global pause flag — when true, copy engine skips all signals.
     pub pause_flag: Arc<AtomicBool>,
 }

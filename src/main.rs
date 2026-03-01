@@ -109,6 +109,18 @@ async fn main() -> anyhow::Result<()> {
         balance_checker = None;
     };
 
+    // --- CLOB client for AppState (shared for manual close, etc.) ---
+    let clob_client: Option<Arc<ClobClient>> = if config.has_polymarket_auth() {
+        let auth = PolymarketAuth::new(
+            config.polymarket_api_key.clone().unwrap(),
+            config.polymarket_api_secret.clone().unwrap(),
+            config.polymarket_passphrase.clone().unwrap(),
+        );
+        Some(Arc::new(ClobClient::new(reqwest::Client::new(), auth)))
+    } else {
+        None
+    };
+
     // --- Whale seeder (periodic: seed new whales + deactivate stale ones) ---
     if config.whale_seeder_enabled {
         let seeder_data_client = DataClient::new(reqwest::Client::new());
@@ -472,6 +484,7 @@ async fn main() -> anyhow::Result<()> {
         wallet,
         trading_client,
         balance_checker,
+        clob_client,
         pause_flag,
     };
     let router = create_router(state);

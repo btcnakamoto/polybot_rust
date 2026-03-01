@@ -64,6 +64,18 @@ pub async fn upsert_position(
     }
 }
 
+/// Get a single position by ID.
+pub async fn get_position_by_id(pool: &PgPool, id: uuid::Uuid) -> anyhow::Result<Option<Position>> {
+    let pos = sqlx::query_as::<_, Position>(
+        "SELECT * FROM positions WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(pos)
+}
+
 /// Get all open positions.
 pub async fn get_open_positions(pool: &PgPool) -> anyhow::Result<Vec<Position>> {
     let positions = sqlx::query_as::<_, Position>(

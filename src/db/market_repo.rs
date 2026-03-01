@@ -131,6 +131,34 @@ pub async fn get_market_question(pool: &PgPool, market_id: &str) -> anyhow::Resu
     Ok(row.map(|r| r.0))
 }
 
+/// Get slug and question for a market by condition_id from active_markets.
+pub async fn get_market_info(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<(Option<String>, Option<String>)>> {
+    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT slug, question FROM active_markets WHERE condition_id = $1",
+    )
+    .bind(condition_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if row.is_some() {
+        return Ok(row);
+    }
+
+    // Retry with 0x prefix
+    if !condition_id.starts_with("0x") {
+        let prefixed = format!("0x{}", condition_id);
+        let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT slug, question FROM active_markets WHERE condition_id = $1",
+        )
+        .bind(&prefixed)
+        .fetch_optional(pool)
+        .await?;
+        return Ok(row);
+    }
+
+    Ok(None)
+}
+
 /// Get a single market outcome by market_id.
 pub async fn get_market_outcome(
     pool: &PgPool,

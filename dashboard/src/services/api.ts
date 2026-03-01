@@ -92,6 +92,16 @@ export async function fetchPositions(): Promise<Position[]> {
   return data.data ?? [];
 }
 
+export async function closePosition(id: string, price?: string): Promise<Position> {
+  const { data } = await api.post<ApiResponse<Position>>(`/positions/${id}/close`, {
+    price: price || undefined,
+  });
+  if (!data.success) {
+    throw new Error(data.error ?? 'Failed to close position');
+  }
+  return data.data!;
+}
+
 // Baskets
 
 export async function fetchBaskets(): Promise<WhaleBasket[]> {

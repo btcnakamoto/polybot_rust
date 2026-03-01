@@ -1,0 +1,1 @@
+ALTER TABLE active_markets ADD COLUMN IF NOT EXISTS slug TEXT;

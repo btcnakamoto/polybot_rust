@@ -26,6 +26,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/trades", get(handlers::trades::list))
         // Positions
         .route("/api/positions", get(handlers::positions::list))
+        .route("/api/positions/:id/close", post(handlers::positions::close))
         // Baskets
         .route("/api/baskets", get(handlers::baskets::list).post(handlers::baskets::create))
         .route("/api/baskets/:id", get(handlers::baskets::detail))

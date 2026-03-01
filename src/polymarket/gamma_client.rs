@@ -18,6 +18,8 @@ pub struct GammaMarket {
     #[serde(alias = "conditionId")]
     pub condition_id: String,
     pub question: String,
+    #[serde(default)]
+    pub slug: Option<String>,
     /// Stringified JSON array of token IDs, e.g. "[\"token1\", \"token2\"]"
     #[serde(default, alias = "clobTokenIds")]
     pub clob_token_ids: Option<String>,
