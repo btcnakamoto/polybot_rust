@@ -172,11 +172,12 @@ pub async fn get_all_orders_enriched(pool: &PgPool) -> anyhow::Result<Vec<Enrich
         SELECT co.*,
                w.address AS whale_address,
                w.label   AS whale_label,
-               am.question AS market_question
+               COALESCE(am1.question, am2.question) AS market_question
         FROM copy_orders co
         LEFT JOIN whale_trades wt ON co.whale_trade_id = wt.id
         LEFT JOIN whales w ON wt.whale_id = w.id
-        LEFT JOIN active_markets am ON co.market_id = am.condition_id
+        LEFT JOIN active_markets am1 ON co.market_id = am1.condition_id
+        LEFT JOIN active_markets am2 ON am2.clob_token_ids LIKE '%' || co.token_id || '%'
         ORDER BY co.placed_at DESC
         LIMIT 200
         "#,
