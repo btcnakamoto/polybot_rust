@@ -33,6 +33,7 @@ const groups: { title: string; description: string; fields: FieldDef[] }[] = [
       { key: 'signal_notional_liquidity_pct', label: '流动性比例', type: 'number', description: '市场流动性阈值百分比' },
       { key: 'signal_notional_floor', label: '名义下限', type: 'number', description: '最低名义价值 (USDC)' },
       { key: 'max_signal_notional', label: '名义上限', type: 'number', description: '最大名义价值 (USDC)' },
+      { key: 'tracked_whale_min_notional', label: '巨鲸最低交易额', type: 'number', description: '已跟踪巨鲸的最低名义价值 (USDC)' },
     ],
   },
   {
@@ -41,6 +42,7 @@ const groups: { title: string; description: string; fields: FieldDef[] }[] = [
     fields: [
       { key: 'default_stop_loss_pct', label: '止损', type: 'number', description: '例: 0.15 = 15%' },
       { key: 'default_take_profit_pct', label: '止盈', type: 'number', description: '例: 0.30 = 30%' },
+      { key: 'max_daily_loss', label: '日最大亏损', type: 'number', description: '单日最大允许亏损 (USDC)' },
     ],
   },
   {

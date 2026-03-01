@@ -26,6 +26,8 @@ const ALLOWED_KEYS: &[&str] = &[
     "basket_consensus_threshold",
     "basket_time_window_hours",
     "notifications_enabled",
+    "tracked_whale_min_notional",
+    "max_daily_loss",
 ];
 
 #[derive(Serialize)]
@@ -54,6 +56,8 @@ fn defaults_from_config(state: &AppState) -> HashMap<String, String> {
     m.insert("basket_consensus_threshold".into(), c.basket_consensus_threshold.to_string());
     m.insert("basket_time_window_hours".into(), c.basket_time_window_hours.to_string());
     m.insert("notifications_enabled".into(), c.notifications_enabled.to_string());
+    m.insert("tracked_whale_min_notional".into(), c.tracked_whale_min_notional.to_string());
+    m.insert("max_daily_loss".into(), c.max_daily_loss.to_string());
     m
 }
 

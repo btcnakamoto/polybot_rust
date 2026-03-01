@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
-use crate::db::{market_repo, order_repo, position_repo};
+use crate::db::{config_repo, market_repo, order_repo, position_repo};
 use crate::models::CopySignal;
 use crate::polymarket::balance::BalanceChecker;
 use crate::services::notifier::Notifier;
@@ -208,11 +208,23 @@ async fn process_signal(
         price: signal.price,
     };
 
+    // 2b. Apply runtime override for max_daily_loss
+    let mut risk_limits = config.risk_limits.clone();
+    if let Ok(entries) = config_repo::get_all_config(pool).await {
+        for entry in entries {
+            if entry.key == "max_daily_loss" {
+                if let Ok(v) = entry.value.parse() {
+                    risk_limits.max_daily_loss = v;
+                }
+            }
+        }
+    }
+
     // 3. Risk check
     if let Err(violation) = risk_manager::check_risk(
         &pending_order,
         &portfolio,
-        &config.risk_limits,
+        &risk_limits,
     ) {
         tracing::warn!(
             violation = %violation,
