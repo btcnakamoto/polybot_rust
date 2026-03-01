@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 
-use crate::db::{order_repo, position_repo};
+use crate::db::{market_repo, order_repo, position_repo};
 use crate::models::CopySignal;
 use crate::polymarket::balance::BalanceChecker;
 use crate::services::notifier::Notifier;
@@ -269,7 +269,11 @@ async fn process_signal(
 
             // Notify order result
             if let Some(n) = notifier {
-                let msg = crate::services::notifier::format_order_result(&order, true, None);
+                let market_question = market_repo::get_market_question(pool, &signal.market_id)
+                    .await
+                    .ok()
+                    .flatten();
+                let msg = crate::services::notifier::format_order_result(&order, true, None, market_question.as_deref());
                 n.send(&msg).await;
             }
         }
@@ -286,7 +290,11 @@ async fn process_signal(
 
             // Notify order failure
             if let Some(n) = notifier {
-                let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg));
+                let market_question = market_repo::get_market_question(pool, &signal.market_id)
+                    .await
+                    .ok()
+                    .flatten();
+                let msg = crate::services::notifier::format_order_result(&order, false, Some(&err_msg), market_question.as_deref());
                 n.send(&msg).await;
             }
         }

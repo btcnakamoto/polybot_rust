@@ -5,7 +5,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tokio::time::{interval, Duration};
 
-use crate::db::position_repo;
+use crate::db::{market_repo, position_repo};
 use crate::polymarket::clob_client::ClobClient;
 use crate::polymarket::trading::TradingClient;
 use crate::services::notifier::Notifier;
@@ -184,14 +184,18 @@ pub async fn run_position_monitor(
 
             // Notify
             if let Some(ref n) = notifier {
-                let msg = format!(
-                    "*Position Exit*\nToken: `{}`\nReason: {}\nEntry: {}\nExit: {}\nPnL: {} USDC\nPnL%: {}%",
-                    pos.token_id,
-                    reason.replace('_', " "),
+                let market_question = market_repo::get_market_question(&pool, &pos.market_id)
+                    .await
+                    .ok()
+                    .flatten();
+                let msg = crate::services::notifier::format_position_exit(
+                    market_question.as_deref(),
+                    &pos.market_id,
+                    reason,
                     pos.avg_entry_price,
                     current_price,
                     realized_pnl,
-                    pnl_pct.round_dp(2),
+                    pnl_pct,
                 );
                 n.send(&msg).await;
             }

@@ -138,10 +138,14 @@ pub async fn run_resolution_poller(
                         }).sum();
 
                         if !positions.is_empty() {
-                            let msg = format!(
-                                "*Market Settled*\nMarket: `{}`\nOutcome: {}\nPositions closed: {}\nTotal PnL: {} USDC",
-                                market_outcome.market_id,
-                                outcome_str.replace('_', " "),
+                            let market_question = market_repo::get_market_question(&pool, &market_outcome.market_id)
+                                .await
+                                .ok()
+                                .flatten();
+                            let msg = crate::services::notifier::format_market_settled(
+                                market_question.as_deref(),
+                                &market_outcome.market_id,
+                                outcome_str,
                                 positions.len(),
                                 total_pnl,
                             );

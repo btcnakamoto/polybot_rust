@@ -303,10 +303,16 @@ pub async fn process_trade_event(
         }
     }
 
+    // Fetch market question once for notifications and category inference
+    let market_question = market_repo::get_market_question(pool, &event.market_id)
+        .await
+        .ok()
+        .flatten();
+
     // Step 5b: Auto-assign admitted whale to matching-category baskets
     if admitted {
-        if let Ok(Some(question)) = market_repo::get_market_question(pool, &event.market_id).await {
-            if let Some(cat) = infer_market_category(&question) {
+        if let Some(ref question) = market_question {
+            if let Some(cat) = infer_market_category(question) {
                 match auto_assign_to_baskets(pool, whale.id, cat.as_str()).await {
                     Ok(names) => {
                         for name in &names {
@@ -450,6 +456,7 @@ pub async fn process_trade_event(
                         score.win_rate,
                         score.kelly_fraction,
                         ev_copy,
+                        market_question.as_deref(),
                     );
                     n.send(&msg).await;
                 }
@@ -491,6 +498,12 @@ pub async fn process_trade_event(
                                 &basket.name,
                                 &check.direction,
                                 check.consensus_pct,
+                                check.participating,
+                                check.total,
+                                &event.market_id,
+                                market_question.as_deref(),
+                                event.price,
+                                event.notional,
                             );
                             n.send(&msg).await;
                         }
