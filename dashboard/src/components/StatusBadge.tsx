@@ -7,6 +7,7 @@ const colorMap: Record<string, string> = {
   failed: 'bg-red-500/20 text-red-400 ring-red-500/30',
   cancelled: 'bg-slate-500/20 text-slate-400 ring-slate-500/30',
   closed: 'bg-slate-500/20 text-slate-400 ring-slate-500/30',
+  exiting: 'bg-amber-500/20 text-amber-400 ring-amber-500/30',
   // Classification
   informed: 'bg-emerald-500/20 text-emerald-400 ring-emerald-500/30',
   top_tier: 'bg-amber-500/20 text-amber-300 ring-amber-500/30',
