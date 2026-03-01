@@ -153,9 +153,13 @@ export default function Positions() {
                       )}
                     </td>
                     <td className="px-4 py-2 text-slate-300">
-                      {p.outcome_label && !['Yes', 'No'].includes(p.outcome_label)
-                        ? <>{p.outcome_label} <span className="text-xs text-slate-500">({p.outcome})</span></>
-                        : p.outcome}
+                      {(() => {
+                        const label = p.outcome_label ?? p.outcome;
+                        if (!['Yes', 'No'].includes(label)) {
+                          return <>{label} <span className="text-xs text-slate-500">({label === p.outcome ? '' : p.outcome})</span></>;
+                        }
+                        return label;
+                      })()}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-300">
                       {Number(p.size).toFixed(2)}
