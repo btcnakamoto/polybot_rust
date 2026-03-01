@@ -59,9 +59,9 @@ pub async fn run_position_monitor(
             // Fetch current best price from orderbook
             let current_price = match clob_client.get_order_book(&pos.token_id).await {
                 Ok(book) => {
-                    // For a position we hold, the exit price is the best bid
-                    // (we'd be selling into bids)
-                    match book.bids.first() {
+                    // For a position we hold, the exit price is the best (highest) bid.
+                    // CLOB API returns bids in ascending order, so use .last() or max.
+                    match book.bids.iter().max_by_key(|l| l.price) {
                         Some(level) => level.price,
                         None => {
                             tracing::debug!(

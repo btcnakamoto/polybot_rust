@@ -67,6 +67,7 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
             max_signal_notional: rust_decimal::Decimal::from(500_000),
             min_signal_ev: rust_decimal::Decimal::from(50),
             assumed_slippage_pct: rust_decimal::Decimal::new(2, 2),
+            max_daily_loss: rust_decimal::Decimal::from(2_000),
         }
     });
 
