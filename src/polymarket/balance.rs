@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
+use polymarket_client_sdk::clob::types::request::BalanceAllowanceRequest;
+use polymarket_client_sdk::clob::types::AssetType;
+use polymarket_client_sdk::types::U256;
 use rust_decimal::Decimal;
 
 use super::wallet::PolymarketWallet;
 
-/// Queries USDC and CTF token balances via the CLOB API.
+/// Queries USDC and CTF token balances via the authenticated CLOB API.
 pub struct BalanceChecker {
     wallet: Arc<PolymarketWallet>,
 }
@@ -19,62 +22,33 @@ impl BalanceChecker {
         &self.wallet
     }
 
-    /// Get available USDC balance from the CLOB API.
-    ///
-    /// Uses the authenticated client to query balance. Falls back to zero if
-    /// the endpoint is unavailable.
+    /// Get available USDC balance from the authenticated CLOB API.
     pub async fn get_usdc_balance(&self) -> anyhow::Result<Decimal> {
-        // Use the wallet address to query the public balance endpoint
-        let address = self.wallet.wallet_address();
-        let url = format!(
-            "https://clob.polymarket.com/balance?address={}",
-            address
-        );
+        let request = BalanceAllowanceRequest::builder()
+            .asset_type(AssetType::Collateral)
+            .build();
 
-        let resp: serde_json::Value = reqwest::get(&url).await?.json().await?;
-
-        // The response may vary; try common field names
-        let balance = resp
-            .get("balance")
-            .or_else(|| resp.get("available"))
-            .and_then(|v| {
-                v.as_str()
-                    .and_then(|s| s.parse::<Decimal>().ok())
-                    .or_else(|| v.as_f64().map(|f| Decimal::try_from(f).unwrap_or(Decimal::ZERO)))
-            })
-            .unwrap_or(Decimal::ZERO);
-
-        Ok(balance)
+        let resp = self.wallet.client().balance_allowance(request).await?;
+        Ok(resp.balance)
     }
 
     /// Get balance of a specific CTF token.
-    ///
-    /// Uses the CLOB API positions endpoint to look up the token holding.
     pub async fn get_token_balance(&self, token_id: &str) -> anyhow::Result<Decimal> {
-        let address = self.wallet.wallet_address();
-        let url = format!(
-            "https://clob.polymarket.com/positions?address={}&asset_id={}",
-            address, token_id
-        );
+        let token_id_u256 = U256::from_str_radix(token_id, 10)
+            .or_else(|_| {
+                token_id
+                    .strip_prefix("0x")
+                    .map(|hex| U256::from_str_radix(hex, 16))
+                    .unwrap_or_else(|| U256::from_str_radix(token_id, 16))
+            })?;
 
-        let resp: serde_json::Value = reqwest::get(&url).await?.json().await?;
+        let request = BalanceAllowanceRequest::builder()
+            .asset_type(AssetType::Conditional)
+            .token_id(token_id_u256)
+            .build();
 
-        // Extract size from position data
-        let balance = resp
-            .get("size")
-            .or_else(|| {
-                resp.as_array()
-                    .and_then(|arr| arr.first())
-                    .and_then(|p| p.get("size"))
-            })
-            .and_then(|v| {
-                v.as_str()
-                    .and_then(|s| s.parse::<Decimal>().ok())
-                    .or_else(|| v.as_f64().map(|f| Decimal::try_from(f).unwrap_or(Decimal::ZERO)))
-            })
-            .unwrap_or(Decimal::ZERO);
-
-        Ok(balance)
+        let resp = self.wallet.client().balance_allowance(request).await?;
+        Ok(resp.balance)
     }
 
     /// Return the wallet address.
