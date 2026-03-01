@@ -68,6 +68,9 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
             min_signal_ev: rust_decimal::Decimal::from(50),
             assumed_slippage_pct: rust_decimal::Decimal::new(2, 2),
             max_daily_loss: rust_decimal::Decimal::from(2_000),
+            maker_mode: true,
+            maker_order_ttl_secs: 600,
+            maker_price_offset: rust_decimal::Decimal::ZERO,
         }
     });
 
@@ -80,6 +83,7 @@ async fn build_test_app() -> (axum::Router, sqlx::PgPool) {
         wallet: None,
         trading_client: None,
         balance_checker: None,
+        clob_client: None,
         pause_flag: Arc::new(AtomicBool::new(false)),
     };
 
