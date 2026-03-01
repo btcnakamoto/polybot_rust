@@ -14,7 +14,7 @@ pub struct ApiResponse<T: Serialize> {
 }
 
 pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<Position>>> {
-    match position_repo::get_open_positions(&state.db).await {
+    match position_repo::get_all_positions(&state.db).await {
         Ok(positions) => Json(ApiResponse {
             success: true,
             data: Some(positions),

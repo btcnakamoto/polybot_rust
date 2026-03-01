@@ -75,6 +75,17 @@ pub async fn get_open_positions(pool: &PgPool) -> anyhow::Result<Vec<Position>> 
     Ok(positions)
 }
 
+/// Get all positions (most recent first), limited to 200.
+pub async fn get_all_positions(pool: &PgPool) -> anyhow::Result<Vec<Position>> {
+    let positions = sqlx::query_as::<_, Position>(
+        "SELECT * FROM positions ORDER BY opened_at DESC LIMIT 200",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(positions)
+}
+
 /// Count open positions.
 pub async fn count_open_positions(pool: &PgPool) -> anyhow::Result<i64> {
     let row: (i64,) = sqlx::query_as(
