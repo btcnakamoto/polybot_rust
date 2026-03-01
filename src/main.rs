@@ -124,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .await;
         });
-        tracing::info!(interval_secs = 6 * 3600, "Whale seeder spawned (periodic)");
+        tracing::info!(interval_secs = seeder_interval, "Whale seeder spawned (periodic)");
     } else {
         tracing::info!("Whale seeder disabled (WHALE_SEEDER_ENABLED=false)");
     }

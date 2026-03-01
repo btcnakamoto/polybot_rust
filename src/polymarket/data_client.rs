@@ -110,25 +110,45 @@ impl DataClient {
     }
 
     /// Fetch leaderboard entries from the Polymarket data API.
+    /// The API returns max 50 entries per request, so this paginates
+    /// automatically using the `offset` parameter until `total` entries
+    /// are collected (or the API returns fewer than a full page).
     pub async fn get_leaderboard(
         &self,
-        limit: u32,
+        total: u32,
     ) -> Result<Vec<LeaderboardEntry>, DataClientError> {
         let url = format!("{}/v1/leaderboard", self.base_url);
-        let resp = self
-            .http
-            .get(&url)
-            .query(&[
-                ("limit", limit.to_string()),
-                ("timePeriod", "ALL".into()),
-                ("orderBy", "PNL".into()),
-            ])
-            .send()
-            .await?
-            .error_for_status()?;
+        let page_size: u32 = 50; // API max per request
+        let mut all_entries = Vec::with_capacity(total as usize);
+        let mut offset: u32 = 0;
 
-        let entries: Vec<LeaderboardEntry> = resp.json().await?;
-        Ok(entries)
+        while (all_entries.len() as u32) < total {
+            let resp = self
+                .http
+                .get(&url)
+                .query(&[
+                    ("limit", page_size.to_string()),
+                    ("offset", offset.to_string()),
+                    ("timePeriod", "ALL".into()),
+                    ("orderBy", "PNL".into()),
+                ])
+                .send()
+                .await?
+                .error_for_status()?;
+
+            let page: Vec<LeaderboardEntry> = resp.json().await?;
+            let page_len = page.len();
+            all_entries.extend(page);
+
+            if page_len < page_size as usize {
+                // No more pages available
+                break;
+            }
+            offset += page_size;
+        }
+
+        all_entries.truncate(total as usize);
+        Ok(all_entries)
     }
 
     /// Look up a market for resolution purposes.

@@ -94,7 +94,7 @@ async fn seed_and_cleanup(
         slots_available,
     );
 
-    // Step 3: Fetch leaderboard and seed new whales
+    // Step 3: Fetch leaderboard (paginated) and seed new whales
     let fetch_count = 500u32;
     let entries = match data_client.get_leaderboard(fetch_count).await {
         Ok(e) => e,
@@ -103,6 +103,12 @@ async fn seed_and_cleanup(
             return Err(anyhow::anyhow!("Failed to fetch leaderboard: {e}"));
         }
     };
+
+    tracing::info!(
+        fetched = entries.len(),
+        requested = fetch_count,
+        "Whale seeder: fetched leaderboard entries",
+    );
 
     let skip_top_n = config.whale_seeder_skip_top_n;
     let min_trades = config.whale_seeder_min_trades;
@@ -133,6 +139,12 @@ async fn seed_and_cleanup(
             true
         })
         .collect();
+
+    tracing::info!(
+        candidates = filtered_entries.len(),
+        already_tracked = tracked_addrs.len(),
+        "Whale seeder: candidates after PnL/volume filter",
+    );
 
     let mut seeded_count = 0u32;
     let mut skipped_inactive = 0u32;
