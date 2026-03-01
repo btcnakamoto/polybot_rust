@@ -139,3 +139,50 @@ pub async fn get_all_orders(pool: &PgPool) -> anyhow::Result<Vec<CopyOrder>> {
 
     Ok(orders)
 }
+
+/// Enriched order with whale address for dashboard display.
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct EnrichedCopyOrder {
+    // copy_orders fields
+    pub id: Uuid,
+    pub whale_trade_id: Option<Uuid>,
+    pub market_id: String,
+    pub token_id: String,
+    pub side: String,
+    pub size: Decimal,
+    pub target_price: Decimal,
+    pub fill_price: Option<Decimal>,
+    pub slippage: Option<Decimal>,
+    pub status: String,
+    pub strategy: String,
+    pub error_message: Option<String>,
+    pub placed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub filled_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub clob_order_id: Option<String>,
+    // joined whale info
+    pub whale_address: Option<String>,
+    pub whale_label: Option<String>,
+    pub market_question: Option<String>,
+}
+
+/// Get all orders enriched with whale address and market question (most recent first, limit 200).
+pub async fn get_all_orders_enriched(pool: &PgPool) -> anyhow::Result<Vec<EnrichedCopyOrder>> {
+    let orders = sqlx::query_as::<_, EnrichedCopyOrder>(
+        r#"
+        SELECT co.*,
+               w.address AS whale_address,
+               w.label   AS whale_label,
+               am.question AS market_question
+        FROM copy_orders co
+        LEFT JOIN whale_trades wt ON co.whale_trade_id = wt.id
+        LEFT JOIN whales w ON wt.whale_id = w.id
+        LEFT JOIN active_markets am ON co.market_id = am.condition_id
+        ORDER BY co.placed_at DESC
+        LIMIT 200
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(orders)
+}

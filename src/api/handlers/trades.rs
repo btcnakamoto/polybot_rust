@@ -3,7 +3,7 @@ use axum::Json;
 use serde::Serialize;
 
 use crate::db::order_repo;
-use crate::models::CopyOrder;
+use crate::db::order_repo::EnrichedCopyOrder;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -13,8 +13,8 @@ pub struct ApiResponse<T: Serialize> {
     pub error: Option<String>,
 }
 
-pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<CopyOrder>>> {
-    match order_repo::get_all_orders(&state.db).await {
+pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<EnrichedCopyOrder>>> {
+    match order_repo::get_all_orders_enriched(&state.db).await {
         Ok(orders) => Json(ApiResponse {
             success: true,
             data: Some(orders),

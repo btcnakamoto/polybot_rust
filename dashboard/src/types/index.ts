@@ -44,6 +44,9 @@ export interface CopyOrder {
   error_message?: string;
   placed_at?: string;
   filled_at?: string;
+  whale_address?: string;
+  whale_label?: string;
+  market_question?: string;
 }
 
 export interface Position {

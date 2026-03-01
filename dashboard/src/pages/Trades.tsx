@@ -73,6 +73,7 @@ export default function Trades() {
           <table className="w-full text-sm min-w-[750px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
+                <th className="text-left px-4 py-3 font-medium">跟单来源</th>
                 <th className="text-left px-4 py-3 font-medium">市场</th>
                 <th className="text-left px-4 py-3 font-medium">方向</th>
                 <th className="text-right px-4 py-3 font-medium">数量</th>
@@ -87,7 +88,7 @@ export default function Trades() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-slate-600 border-t-indigo-400 rounded-full animate-spin" />
                       加载中...
@@ -96,15 +97,26 @@ export default function Trades() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
                     暂无跟单交易
                   </td>
                 </tr>
               ) : (
                 filtered.map((t) => (
                   <tr key={t.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
-                    <td className="px-4 py-2 font-mono text-xs text-slate-300">
-                      {t.market_id.slice(0, 14)}...
+                    <td className="px-4 py-2">
+                      {t.whale_address ? (
+                        <div>
+                          <span className="font-mono text-xs text-indigo-400" title={t.whale_address}>
+                            {t.whale_label || `${t.whale_address.slice(0, 6)}...${t.whale_address.slice(-4)}`}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500">--</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-300 max-w-[200px] truncate" title={t.market_question || t.market_id}>
+                      {t.market_question || `${t.market_id.slice(0, 14)}...`}
                     </td>
                     <td className="px-4 py-2">
                       <StatusBadge status={t.side} />
