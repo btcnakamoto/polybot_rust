@@ -162,6 +162,11 @@ export default function Positions() {
                       Number(p.unrealized_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
                     }`}>
                       ${Number(p.unrealized_pnl ?? 0).toFixed(2)}
+                      {Number(p.avg_entry_price) > 0 && Number(p.size) > 0 && (
+                        <span className="text-xs opacity-70 ml-1">
+                          ({((Number(p.unrealized_pnl ?? 0) / (Number(p.avg_entry_price) * Number(p.size))) * 100).toFixed(1)}%)
+                        </span>
+                      )}
                     </td>
                     <td className={`px-4 py-2 text-right font-mono font-medium ${
                       Number(p.realized_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
