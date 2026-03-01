@@ -131,36 +131,44 @@ impl DataClient {
         Ok(entries)
     }
 
-    /// Look up a market for resolution purposes via the Gamma API.
+    /// Look up a market for resolution purposes.
     ///
     /// Handles both formats stored in `market_outcomes.market_id`:
-    ///   - `0x`-prefixed hex  → condition_id  → `?condition_id=`
-    ///   - decimal string     → CLOB token_id → `?clob_token_ids=`
+    ///   - `0x`-prefixed hex condition_id → CLOB API (direct lookup by path)
+    ///   - decimal token_id string        → Gamma API (`?clob_token_ids=`)
     pub async fn get_market_for_resolution(
         &self,
         market_id: &str,
     ) -> Result<ApiMarket, DataClientError> {
-        let url = format!("{}/markets", GAMMA_API_BASE);
-
-        let (key, value) = if market_id.starts_with("0x") {
-            ("condition_id", market_id.to_string())
+        if market_id.starts_with("0x") {
+            // CLOB API: direct lookup by condition_id
+            let url = format!("https://clob.polymarket.com/markets/{}", market_id);
+            let resp = self
+                .http
+                .get(&url)
+                .send()
+                .await?
+                .error_for_status()?;
+            let market: ApiMarket = resp.json().await?;
+            Ok(market)
         } else {
-            ("clob_token_ids", market_id.to_string())
-        };
-
-        let resp = self
-            .http
-            .get(&url)
-            .query(&[(key, &value)])
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let markets: Vec<ApiMarket> = resp.json().await?;
-        markets
-            .into_iter()
-            .next()
-            .ok_or_else(|| DataClientError::Unexpected(format!("no market found for {}", market_id)))
+            // Gamma API: lookup by decimal CLOB token_id
+            let url = format!("{}/markets", GAMMA_API_BASE);
+            let resp = self
+                .http
+                .get(&url)
+                .query(&[("clob_token_ids", market_id)])
+                .send()
+                .await?
+                .error_for_status()?;
+            let markets: Vec<ApiMarket> = resp.json().await?;
+            markets
+                .into_iter()
+                .next()
+                .ok_or_else(|| {
+                    DataClientError::Unexpected(format!("no market found for {}", market_id))
+                })
+        }
     }
 
     /// Fetch recent trades for a specific user address.

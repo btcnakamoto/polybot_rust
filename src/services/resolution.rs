@@ -2,11 +2,17 @@ use std::sync::Arc;
 
 use rust_decimal::Decimal;
 use sqlx::PgPool;
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, sleep, Duration};
 
 use crate::db::{market_repo, position_repo};
 use crate::polymarket::DataClient;
 use crate::services::notifier::Notifier;
+
+/// Max markets to check per cycle (avoid rate limits).
+const BATCH_SIZE: usize = 50;
+
+/// Delay between API calls to respect rate limits.
+const API_DELAY: Duration = Duration::from_millis(200);
 
 /// Periodically poll unresolved markets and settle positions when outcomes are known.
 pub async fn run_resolution_poller(
@@ -20,8 +26,6 @@ pub async fn run_resolution_poller(
     loop {
         ticker.tick().await;
 
-        tracing::debug!("Resolution poller: checking unresolved markets");
-
         let unresolved = match market_repo::get_unresolved_markets(&pool).await {
             Ok(m) => m,
             Err(e) => {
@@ -31,15 +35,27 @@ pub async fn run_resolution_poller(
         };
 
         if unresolved.is_empty() {
-            tracing::debug!("No unresolved markets to check");
+            tracing::info!("Resolution poller: no unresolved markets");
             continue;
         }
 
-        for market_outcome in &unresolved {
+        let batch = &unresolved[..unresolved.len().min(BATCH_SIZE)];
+        tracing::info!(
+            total = unresolved.len(),
+            checking = batch.len(),
+            "Resolution poller: checking markets"
+        );
+
+        let mut resolved_count = 0u32;
+        let mut failed_count = 0u32;
+        let mut still_open = 0u32;
+
+        for market_outcome in batch {
             match data_client.get_market_for_resolution(&market_outcome.market_id).await {
                 Ok(api_market) => {
                     // Check if market is closed
                     if api_market.closed != Some(true) {
+                        still_open += 1;
                         continue;
                     }
 
@@ -47,7 +63,6 @@ pub async fn run_resolution_poller(
                     let mut resolved_outcome: Option<&str> = None;
                     for token in &api_market.tokens {
                         if token.winner == Some(true) {
-                            // Determine if YES or NO won based on outcome field
                             let outcome_upper = token.outcome.to_uppercase();
                             if outcome_upper == "YES" {
                                 resolved_outcome = Some("resolved_yes");
@@ -60,12 +75,14 @@ pub async fn run_resolution_poller(
 
                     let Some(outcome_str) = resolved_outcome else {
                         // Market closed but no winner declared yet
+                        still_open += 1;
                         continue;
                     };
 
                     tracing::info!(
                         market_id = %market_outcome.market_id,
                         outcome = outcome_str,
+                        question = %api_market.question,
                         "Market resolved"
                     );
 
@@ -74,6 +91,8 @@ pub async fn run_resolution_poller(
                         tracing::error!(error = %e, market_id = %market_outcome.market_id, "Failed to resolve market");
                         continue;
                     }
+
+                    resolved_count += 1;
 
                     // Settle positions for this market
                     let positions = match position_repo::get_positions_for_market(&pool, &market_outcome.market_id).await {
@@ -85,22 +104,16 @@ pub async fn run_resolution_poller(
                     };
 
                     for pos in &positions {
-                        // Calculate realized PnL based on outcome
                         let pnl = if outcome_str == "resolved_yes" {
                             if pos.outcome == "Yes" {
-                                // Bought YES and YES won: profit = size * (1 - entry_price)
                                 pos.size * (Decimal::ONE - pos.avg_entry_price)
                             } else {
-                                // Bought NO and YES won: loss = -size * entry_price
                                 -(pos.size * pos.avg_entry_price)
                             }
                         } else {
-                            // resolved_no
                             if pos.outcome == "No" {
-                                // Bought NO and NO won: profit = size * (1 - entry_price)
                                 pos.size * (Decimal::ONE - pos.avg_entry_price)
                             } else {
-                                // Bought YES and NO won: loss = -size * entry_price
                                 -(pos.size * pos.avg_entry_price)
                             }
                         };
@@ -157,10 +170,22 @@ pub async fn run_resolution_poller(
                     tracing::debug!(
                         error = %e,
                         market_id = %market_outcome.market_id,
-                        "Resolution: market lookup failed — will retry next cycle"
+                        "Resolution: market lookup failed"
                     );
+                    failed_count += 1;
                 }
             }
+
+            // Rate limit: small delay between API calls
+            sleep(API_DELAY).await;
         }
+
+        tracing::info!(
+            resolved = resolved_count,
+            still_open = still_open,
+            failed = failed_count,
+            remaining = unresolved.len().saturating_sub(BATCH_SIZE),
+            "Resolution poller cycle complete"
+        );
     }
 }
