@@ -152,7 +152,7 @@ export default function Positions() {
                       )}
                     </td>
                     <td className="px-4 py-2 text-slate-300">
-                      {p.outcome_label && p.outcome_label !== p.outcome
+                      {p.outcome_label && !['Yes', 'No'].includes(p.outcome_label)
                         ? <>{p.outcome_label} <span className="text-xs text-slate-500">({p.outcome})</span></>
                         : p.outcome}
                     </td>
