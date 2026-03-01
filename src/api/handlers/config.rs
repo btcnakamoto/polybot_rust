@@ -28,6 +28,7 @@ const ALLOWED_KEYS: &[&str] = &[
     "notifications_enabled",
     "tracked_whale_min_notional",
     "max_daily_loss",
+    "max_open_positions",
 ];
 
 #[derive(Serialize)]
@@ -58,6 +59,7 @@ fn defaults_from_config(state: &AppState) -> HashMap<String, String> {
     m.insert("notifications_enabled".into(), c.notifications_enabled.to_string());
     m.insert("tracked_whale_min_notional".into(), c.tracked_whale_min_notional.to_string());
     m.insert("max_daily_loss".into(), c.max_daily_loss.to_string());
+    m.insert("max_open_positions".into(), crate::execution::risk_manager::RiskLimits::default().max_open_positions.to_string());
     m
 }
 

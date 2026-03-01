@@ -43,6 +43,7 @@ const groups: { title: string; description: string; fields: FieldDef[] }[] = [
       { key: 'default_stop_loss_pct', label: '止损', type: 'number', description: '例: 0.15 = 15%' },
       { key: 'default_take_profit_pct', label: '止盈', type: 'number', description: '例: 0.30 = 30%' },
       { key: 'max_daily_loss', label: '日最大亏损', type: 'number', description: '单日最大允许亏损 (USDC)' },
+      { key: 'max_open_positions', label: '最大持仓数', type: 'number', description: '最大同时持仓数量' },
     ],
   },
   {

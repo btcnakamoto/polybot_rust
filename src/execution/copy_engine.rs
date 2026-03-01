@@ -221,6 +221,11 @@ async fn process_signal(
                     risk_limits.max_daily_loss = v;
                 }
             }
+            if entry.key == "max_open_positions" {
+                if let Ok(v) = entry.value.parse() {
+                    risk_limits.max_open_positions = v;
+                }
+            }
         }
     }
 
