@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { fetchTrades } from '../services/api';
 import StatusBadge from '../components/StatusBadge';
 import StatCard from '../components/StatCard';
@@ -106,11 +107,13 @@ export default function Trades() {
                   <tr key={t.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
                     <td className="px-4 py-2">
                       {t.whale_address ? (
-                        <div>
-                          <span className="font-mono text-xs text-indigo-400" title={t.whale_address}>
-                            {t.whale_label || `${t.whale_address.slice(0, 6)}...${t.whale_address.slice(-4)}`}
-                          </span>
-                        </div>
+                        <Link
+                          to={`/whales/${t.whale_address}`}
+                          className="font-mono text-xs text-indigo-400 hover:text-indigo-300 hover:underline transition-colors"
+                          title={t.whale_address}
+                        >
+                          {t.whale_label || `${t.whale_address.slice(0, 6)}...${t.whale_address.slice(-4)}`}
+                        </Link>
                       ) : (
                         <span className="text-xs text-slate-500">--</span>
                       )}
