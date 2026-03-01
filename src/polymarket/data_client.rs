@@ -133,42 +133,61 @@ impl DataClient {
 
     /// Look up a market for resolution purposes.
     ///
-    /// Handles both formats stored in `market_outcomes.market_id`:
-    ///   - `0x`-prefixed hex condition_id → CLOB API (direct lookup by path)
-    ///   - decimal token_id string        → Gamma API (`?clob_token_ids=`)
+    /// All paths resolve via the CLOB API which returns a consistent schema
+    /// with `condition_id`, `tokens[].winner`, and `closed` fields.
+    ///
+    /// Handles three formats stored in `market_outcomes.market_id`:
+    ///   - `0x`-prefixed hex condition_id → CLOB API directly
+    ///   - Hex without `0x` (contains a-f) → prepend `0x`, then CLOB API
+    ///   - Decimal token_id (all digits)   → Gamma API to get conditionId, then CLOB API
     pub async fn get_market_for_resolution(
         &self,
         market_id: &str,
     ) -> Result<ApiMarket, DataClientError> {
+        let condition_id = self.resolve_to_condition_id(market_id).await?;
+
+        let url = format!("https://clob.polymarket.com/markets/{}", condition_id);
+        let resp = self.http.get(&url).send().await?.error_for_status()?;
+        let market: ApiMarket = resp.json().await?;
+        Ok(market)
+    }
+
+    /// Convert any market_id format to a `0x`-prefixed condition_id.
+    async fn resolve_to_condition_id(&self, market_id: &str) -> Result<String, DataClientError> {
         if market_id.starts_with("0x") {
-            // CLOB API: direct lookup by condition_id
-            let url = format!("https://clob.polymarket.com/markets/{}", market_id);
-            let resp = self
-                .http
-                .get(&url)
-                .send()
-                .await?
-                .error_for_status()?;
-            let market: ApiMarket = resp.json().await?;
-            Ok(market)
-        } else {
-            // Gamma API: lookup by decimal CLOB token_id
-            let url = format!("{}/markets", GAMMA_API_BASE);
-            let resp = self
-                .http
-                .get(&url)
-                .query(&[("clob_token_ids", market_id)])
-                .send()
-                .await?
-                .error_for_status()?;
-            let markets: Vec<ApiMarket> = resp.json().await?;
-            markets
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    DataClientError::Unexpected(format!("no market found for {}", market_id))
-                })
+            return Ok(market_id.to_string());
         }
+
+        // Check if it's a hex string without 0x prefix (64 hex chars with a-f letters)
+        let is_bare_hex = market_id.len() == 64
+            && market_id.chars().all(|c| c.is_ascii_hexdigit())
+            && market_id.chars().any(|c| c.is_ascii_alphabetic());
+
+        if is_bare_hex {
+            return Ok(format!("0x{}", market_id));
+        }
+
+        // Decimal token_id: use Gamma API to find the conditionId
+        let url = format!("{}/markets", GAMMA_API_BASE);
+        let resp = self
+            .http
+            .get(&url)
+            .query(&[("clob_token_ids", market_id)])
+            .send()
+            .await?
+            .error_for_status()?;
+
+        // Gamma API returns camelCase JSON — only need conditionId
+        let markets: Vec<serde_json::Value> = resp.json().await?;
+        let condition_id = markets
+            .first()
+            .and_then(|m| m.get("conditionId"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                DataClientError::Unexpected(format!("no market found for token {}", market_id))
+            })?;
+
+        Ok(condition_id.to_string())
     }
 
     /// Fetch recent trades for a specific user address.
