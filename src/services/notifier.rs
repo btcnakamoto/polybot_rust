@@ -63,9 +63,9 @@ fn shorten_wallet(wallet: &str) -> String {
 
 fn side_cn(side: &str) -> &str {
     if side.eq_ignore_ascii_case("BUY") {
-        "买入 🟢"
+        "买入 YES 🟢 看多"
     } else {
-        "卖出 🔴"
+        "卖出 YES 🔴 看空"
     }
 }
 
@@ -187,13 +187,14 @@ pub fn format_order_result(
             fill = fill,
         )
     } else {
+        let side = side_cn(&order.side);
         format!(
             "❌ *订单失败*\n\n\
              📍 {market}\n\
              💰 {side}  {size} 份\n\
              ⚠️ 原因: {err}",
             market = market,
-            side = order.side,
+            side = side,
             size = order.size,
             err = error.unwrap_or("unknown"),
         )
