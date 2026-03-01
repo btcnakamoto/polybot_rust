@@ -60,6 +60,7 @@ pub async fn get_unresolved_markets(pool: &PgPool) -> anyhow::Result<Vec<MarketO
 }
 
 /// Get liquidity for a market by condition_id from active_markets table.
+/// Handles both `0x`-prefixed and bare hex formats.
 pub async fn get_market_liquidity(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<Decimal>> {
     let row: Option<(Decimal,)> = sqlx::query_as(
         "SELECT liquidity FROM active_markets WHERE condition_id = $1",
@@ -68,11 +69,29 @@ pub async fn get_market_liquidity(pool: &PgPool, condition_id: &str) -> anyhow::
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| r.0))
+    if row.is_some() {
+        return Ok(row.map(|r| r.0));
+    }
+
+    // Retry with 0x prefix if the original had none
+    if !condition_id.starts_with("0x") {
+        let prefixed = format!("0x{}", condition_id);
+        let row: Option<(Decimal,)> = sqlx::query_as(
+            "SELECT liquidity FROM active_markets WHERE condition_id = $1",
+        )
+        .bind(&prefixed)
+        .fetch_optional(pool)
+        .await?;
+        return Ok(row.map(|r| r.0));
+    }
+
+    Ok(None)
 }
 
 /// Get the question text for a market by condition_id from active_markets.
+/// Handles both `0x`-prefixed and bare hex formats.
 pub async fn get_market_question(pool: &PgPool, condition_id: &str) -> anyhow::Result<Option<String>> {
+    // Try the ID as-is first
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT question FROM active_markets WHERE condition_id = $1",
     )
@@ -80,7 +99,23 @@ pub async fn get_market_question(pool: &PgPool, condition_id: &str) -> anyhow::R
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| r.0))
+    if row.is_some() {
+        return Ok(row.map(|r| r.0));
+    }
+
+    // Retry with 0x prefix if the original had none
+    if !condition_id.starts_with("0x") {
+        let prefixed = format!("0x{}", condition_id);
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT question FROM active_markets WHERE condition_id = $1",
+        )
+        .bind(&prefixed)
+        .fetch_optional(pool)
+        .await?;
+        return Ok(row.map(|r| r.0));
+    }
+
+    Ok(None)
 }
 
 /// Get a single market outcome by market_id.

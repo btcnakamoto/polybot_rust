@@ -107,6 +107,20 @@ pub fn evaluate_consensus(
         return no_consensus("no votes in window");
     }
 
+    // Require at least 3 whales in basket for meaningful consensus
+    if total_whales < 3 {
+        return no_consensus(&format!(
+            "basket too small ({} whales, need at least 3)",
+            total_whales
+        ));
+    }
+
+    // Require at least 2 unique voters for consensus
+    let unique_voters: std::collections::HashSet<_> = votes.iter().map(|v| v.whale_id).collect();
+    if unique_voters.len() < 2 {
+        return no_consensus("need at least 2 distinct whales voting");
+    }
+
     // Check price distance from resolution (0 or 1)
     let dist_zero = market_price;
     let dist_one = Decimal::ONE - market_price;
