@@ -6,33 +6,89 @@ use crate::config::AppConfig;
 use crate::db::{trade_repo, whale_repo};
 use crate::polymarket::DataClient;
 
-/// Run the whale seeder. This is a one-shot task that imports whale wallets
-/// from the Polymarket leaderboard if the `whales` table has fewer wallets
-/// than the configured minimum.
+/// Maximum number of days since last trade to consider a whale "active".
+const MAX_INACTIVE_DAYS: i64 = 30;
+
+/// Run the whale seeder periodically. Discovers new whales from the Polymarket
+/// leaderboard and deactivates stale ones that haven't traded recently.
 ///
 /// Anti-signal filtering (from README):
 /// - Skip top N leaderboard wallets (everyone copies them — edge is gone)
 /// - Require >= min_trades historical trades (small sample = luck, not skill)
 /// - Positive PnL + meaningful volume
+/// - Must have traded within the last 30 days (recency filter)
+pub async fn run_whale_seeder_loop(
+    data_client: DataClient,
+    pool: PgPool,
+    config: AppConfig,
+    interval_secs: u64,
+) {
+    // Run immediately on startup
+    if let Err(e) = seed_and_cleanup(&data_client, &pool, &config).await {
+        tracing::warn!(error = %e, "Whale seeder initial run failed (non-fatal)");
+    }
+
+    // Then run periodically
+    let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
+    ticker.tick().await; // skip first immediate tick
+
+    loop {
+        ticker.tick().await;
+        if let Err(e) = seed_and_cleanup(&data_client, &pool, &config).await {
+            tracing::warn!(error = %e, "Whale seeder periodic run failed (non-fatal)");
+        }
+    }
+}
+
+/// One-shot seeder (kept for backward compat / tests).
 pub async fn run_whale_seeder(
     data_client: &DataClient,
     pool: &PgPool,
     config: &AppConfig,
 ) -> anyhow::Result<()> {
-    // Check how many active whales we already have
-    let existing = whale_repo::get_active_whales(pool).await?;
-    if existing.len() as i32 >= config.basket_min_wallets {
+    seed_and_cleanup(data_client, pool, config).await
+}
+
+/// Core logic: deactivate stale whales, then discover new ones.
+async fn seed_and_cleanup(
+    data_client: &DataClient,
+    pool: &PgPool,
+    config: &AppConfig,
+) -> anyhow::Result<()> {
+    // Step 1: Deactivate whales that haven't traded in MAX_INACTIVE_DAYS
+    let deactivated = whale_repo::deactivate_stale_whales(pool, MAX_INACTIVE_DAYS).await?;
+    if deactivated > 0 {
         tracing::info!(
-            existing = existing.len(),
-            min = config.basket_min_wallets,
-            "Whale seeder: enough wallets already tracked, skipping"
+            count = deactivated,
+            days = MAX_INACTIVE_DAYS,
+            "Auto-deactivated {} stale whales (no trades in {} days)",
+            deactivated,
+            MAX_INACTIVE_DAYS,
+        );
+    }
+
+    // Step 2: Check if we need more active whales
+    let active = whale_repo::get_active_whales(pool).await?;
+    let max_wallets = config.basket_max_wallets as usize;
+
+    if active.len() >= max_wallets {
+        tracing::debug!(
+            active = active.len(),
+            max = max_wallets,
+            "Whale seeder: at capacity, skipping discovery"
         );
         return Ok(());
     }
 
-    tracing::info!("Whale seeder: fetching leaderboard to seed wallets");
+    let slots_available = max_wallets - active.len();
+    tracing::info!(
+        active = active.len(),
+        slots = slots_available,
+        "Whale seeder: {} slots available, discovering new whales",
+        slots_available,
+    );
 
-    // Fetch more entries to account for filtering
+    // Step 3: Fetch leaderboard and seed new whales
     let fetch_count = 200u32;
     let entries = match data_client.get_leaderboard(fetch_count).await {
         Ok(e) => e,
@@ -45,55 +101,39 @@ pub async fn run_whale_seeder(
     let skip_top_n = config.whale_seeder_skip_top_n;
     let min_trades = config.whale_seeder_min_trades;
 
-    tracing::info!(
-        total_entries = entries.len(),
-        skip_top_n = skip_top_n,
-        min_trades = min_trades,
-        "Anti-signal filtering: skipping top {} leaderboard, requiring >= {} trades",
-        skip_top_n,
-        min_trades,
-    );
+    // Build set of already-tracked addresses to avoid re-processing
+    let tracked_addrs: std::collections::HashSet<String> = whale_repo::get_all_whale_addresses(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
-    // Anti-signal filter 1: Skip top N leaderboard wallets
-    // README: "Don't copy the top leaderboard accounts — everyone already copies them"
+    // Anti-signal filter 1: Skip top N, require positive PnL, meaningful volume
     let filtered_entries: Vec<_> = entries
         .iter()
         .enumerate()
         .filter(|(rank, entry)| {
-            // Skip top N (0-indexed)
             if *rank < skip_top_n {
-                if let Some(addr) = &entry.address {
-                    tracing::debug!(
-                        rank = rank + 1,
-                        address = %addr,
-                        "Anti-signal: skipping top leaderboard wallet (edge is gone)"
-                    );
-                }
                 return false;
             }
-
-            // Must have positive PnL
             let pnl = entry.pnl.unwrap_or(Decimal::ZERO);
             if pnl <= Decimal::ZERO {
                 return false;
             }
-
-            // Must have meaningful volume
             let vol = entry.volume.unwrap_or(Decimal::ZERO);
             if vol <= Decimal::from(1_000) {
                 return false;
             }
-
             true
         })
         .collect();
 
-    let max_to_seed = config.basket_max_wallets as usize;
     let mut seeded_count = 0u32;
+    let mut skipped_inactive = 0u32;
     let mut skipped_low_trades = 0u32;
 
     for (rank, entry) in &filtered_entries {
-        if seeded_count as usize >= max_to_seed {
+        if seeded_count as usize >= slots_available {
             break;
         }
 
@@ -102,29 +142,51 @@ pub async fn run_whale_seeder(
             _ => continue,
         };
 
-        // Anti-signal filter 2: Check trade count before seeding
-        // README: "Don't copy wallets with <100 trades — small sample size"
+        // Skip already-tracked whales
+        if tracked_addrs.contains(&address) {
+            continue;
+        }
+
+        // Fetch recent trades for this wallet
         let user_trades = match data_client.get_user_trades(&address, 200).await {
             Ok(t) => t,
             Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    address = %address,
-                    "Failed to fetch trades for trade-count check — skipping"
-                );
+                tracing::debug!(error = %e, address = %address, "Failed to fetch trades — skipping");
                 continue;
             }
         };
 
+        // Anti-signal filter 2: Minimum trade count
         if (user_trades.len() as u32) < min_trades {
-            tracing::debug!(
-                address = %address,
-                trade_count = user_trades.len(),
-                min_required = min_trades,
-                "Anti-signal: skipping wallet with too few trades (can't distinguish skill from luck)"
-            );
             skipped_low_trades += 1;
             continue;
+        }
+
+        // Anti-signal filter 3: Recency — most recent trade must be within MAX_INACTIVE_DAYS
+        let most_recent_trade = user_trades
+            .iter()
+            .filter_map(|t| parse_trade_timestamp(t.timestamp.as_ref()))
+            .max();
+
+        match most_recent_trade {
+            Some(latest) => {
+                let days_since = (Utc::now() - latest).num_days();
+                if days_since > MAX_INACTIVE_DAYS {
+                    tracing::debug!(
+                        address = %address,
+                        days_since = days_since,
+                        "Skipping inactive whale (last trade {} days ago)",
+                        days_since,
+                    );
+                    skipped_inactive += 1;
+                    continue;
+                }
+            }
+            None => {
+                // No parseable timestamps — skip
+                skipped_inactive += 1;
+                continue;
+            }
         }
 
         let label = format!("leaderboard_rank_{}", rank + 1);
@@ -138,7 +200,7 @@ pub async fn run_whale_seeder(
             }
         };
 
-        // Seed trades from the already-fetched user_trades
+        // Seed trades
         let mut trade_count = 0i32;
         for trade in &user_trades {
             let token_id = trade.token_id.as_deref().unwrap_or("unknown");
@@ -148,23 +210,7 @@ pub async fn run_whale_seeder(
             let price = trade.price.unwrap_or(Decimal::ZERO);
             let notional = size * price;
 
-            let traded_at = trade
-                .timestamp
-                .as_ref()
-                .and_then(|t| match t {
-                    serde_json::Value::Number(n) => {
-                        n.as_i64().and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
-                    }
-                    serde_json::Value::String(s) => {
-                        if let Ok(secs) = s.parse::<i64>() {
-                            return chrono::DateTime::from_timestamp(secs, 0);
-                        }
-                        chrono::DateTime::parse_from_rfc3339(s)
-                            .ok()
-                            .map(|dt| dt.with_timezone(&Utc))
-                    }
-                    _ => None,
-                })
+            let traded_at = parse_trade_timestamp(trade.timestamp.as_ref())
                 .unwrap_or_else(Utc::now);
 
             if let Err(e) = trade_repo::insert_trade(
@@ -178,13 +224,6 @@ pub async fn run_whale_seeder(
             }
         }
 
-        tracing::debug!(
-            address = %address,
-            trades = user_trades.len(),
-            inserted = trade_count,
-            "Seeded trades for whale"
-        );
-
         // Update whale stats from leaderboard data
         let pnl = entry.pnl.unwrap_or(Decimal::ZERO);
         let vol = entry.volume.unwrap_or(Decimal::ZERO);
@@ -196,7 +235,7 @@ pub async fn run_whale_seeder(
             "profitable"
         };
 
-        if let Err(e) = sqlx::query(
+        let _ = sqlx::query(
             r#"UPDATE whales
                SET classification = $2, category = $3, label = $4, updated_at = NOW()
                WHERE id = $1"#,
@@ -206,21 +245,17 @@ pub async fn run_whale_seeder(
         .bind(format!("vol:{}", vol.round()))
         .bind(&label)
         .execute(pool)
-        .await
-        {
-            tracing::warn!(error = %e, "Failed to update whale classification");
-        }
+        .await;
 
-        // Compute and store initial scores from leaderboard aggregate data.
-        // These estimates will be overwritten once real market outcomes resolve.
+        // Compute and store initial scores
         let est_win_rate = if pnl > Decimal::from(100_000) {
-            Decimal::new(68, 2) // 0.68
+            Decimal::new(68, 2)
         } else if pnl > Decimal::from(10_000) {
-            Decimal::new(63, 2) // 0.63
+            Decimal::new(63, 2)
         } else {
-            Decimal::new(58, 2) // 0.58
+            Decimal::new(58, 2)
         };
-        let est_kelly = est_win_rate * Decimal::from(2) - Decimal::ONE; // simplified Kelly
+        let est_kelly = est_win_rate * Decimal::from(2) - Decimal::ONE;
         let est_ev = if trade_count > 0 {
             pnl / Decimal::from(trade_count)
         } else {
@@ -232,28 +267,16 @@ pub async fn run_whale_seeder(
             Decimal::ONE
         };
 
-        if let Err(e) = whale_repo::update_whale_scores(
-            pool,
-            whale.id,
-            est_sharpe,
-            est_win_rate,
-            est_kelly,
-            est_ev,
-            trade_count,
-            pnl,
+        let _ = whale_repo::update_whale_scores(
+            pool, whale.id, est_sharpe, est_win_rate, est_kelly, est_ev, trade_count, pnl,
         )
-        .await
-        {
-            tracing::warn!(error = %e, "Failed to update whale scores");
-        }
+        .await;
 
         tracing::info!(
             address = %address,
-            win_rate = %est_win_rate,
-            kelly = %est_kelly,
-            total_trades = trade_count,
             pnl = %pnl,
-            "Seeded whale with estimated scores"
+            trades = trade_count,
+            "Seeded new whale"
         );
 
         seeded_count += 1;
@@ -261,14 +284,38 @@ pub async fn run_whale_seeder(
 
     tracing::info!(
         seeded = seeded_count,
-        skipped_top_n = skip_top_n,
+        skipped_inactive = skipped_inactive,
         skipped_low_trades = skipped_low_trades,
-        "Whale seeder complete: seeded {} wallets (skipped top {} as anti-signal, {} had <{} trades)",
-        seeded_count,
-        skip_top_n,
-        skipped_low_trades,
-        min_trades,
+        "Whale seeder cycle complete",
     );
 
     Ok(())
+}
+
+fn parse_trade_timestamp(ts: Option<&serde_json::Value>) -> Option<chrono::DateTime<Utc>> {
+    ts.and_then(|t| match t {
+        serde_json::Value::Number(n) => {
+            let secs = n.as_i64()?;
+            if secs > 1_000_000_000_000 {
+                chrono::DateTime::from_timestamp(secs / 1000, ((secs % 1000) * 1_000_000) as u32)
+            } else {
+                chrono::DateTime::from_timestamp(secs, 0)
+            }
+        }
+        serde_json::Value::String(s) => {
+            if let Ok(secs) = s.parse::<i64>() {
+                if secs > 1_000_000_000_000 {
+                    return chrono::DateTime::from_timestamp(
+                        secs / 1000,
+                        ((secs % 1000) * 1_000_000) as u32,
+                    );
+                }
+                return chrono::DateTime::from_timestamp(secs, 0);
+            }
+            chrono::DateTime::parse_from_rfc3339(s)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        }
+        _ => None,
+    })
 }

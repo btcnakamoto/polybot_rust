@@ -107,13 +107,22 @@ async fn main() -> anyhow::Result<()> {
         balance_checker = None;
     };
 
-    // --- Whale seeder (one-shot, runs before market discovery) ---
+    // --- Whale seeder (periodic: seed new whales + deactivate stale ones) ---
     if config.whale_seeder_enabled {
-        let data_client = DataClient::new(reqwest::Client::new());
-        match services::whale_seeder::run_whale_seeder(&data_client, &db, &config).await {
-            Ok(()) => tracing::info!("Whale seeder completed"),
-            Err(e) => tracing::warn!(error = %e, "Whale seeder failed (non-fatal)"),
-        }
+        let seeder_data_client = DataClient::new(reqwest::Client::new());
+        let seeder_db = db.clone();
+        let seeder_config = config.clone();
+        let seeder_interval = 6 * 3600; // Re-check every 6 hours
+        tokio::spawn(async move {
+            services::whale_seeder::run_whale_seeder_loop(
+                seeder_data_client,
+                seeder_db,
+                seeder_config,
+                seeder_interval,
+            )
+            .await;
+        });
+        tracing::info!(interval_secs = 6 * 3600, "Whale seeder spawned (periodic)");
     } else {
         tracing::info!("Whale seeder disabled (WHALE_SEEDER_ENABLED=false)");
     }

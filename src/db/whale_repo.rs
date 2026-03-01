@@ -112,6 +112,35 @@ pub async fn deactivate_whale(pool: &PgPool, whale_id: Uuid) -> anyhow::Result<(
     Ok(())
 }
 
+/// Deactivate whales that haven't traded in `max_inactive_days` days.
+/// Returns the number of whales deactivated.
+pub async fn deactivate_stale_whales(pool: &PgPool, max_inactive_days: i64) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"
+        UPDATE whales SET is_active = false, updated_at = NOW()
+        WHERE is_active = true
+          AND (
+            (last_trade_at IS NOT NULL AND last_trade_at < NOW() - make_interval(days => $1))
+            OR
+            (last_trade_at IS NULL AND created_at < NOW() - make_interval(days => $1))
+          )
+        "#,
+    )
+    .bind(max_inactive_days as i32)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+/// Get all whale addresses (active and inactive).
+pub async fn get_all_whale_addresses(pool: &PgPool) -> anyhow::Result<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT address FROM whales")
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
 /// Update the last_trade_at timestamp.
 pub async fn touch_whale_last_trade(
     pool: &PgPool,
