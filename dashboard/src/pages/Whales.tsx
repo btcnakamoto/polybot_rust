@@ -51,22 +51,22 @@ export default function Whales() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-semibold text-white">跟踪巨鲸</h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-white">跟踪巨鲸</h2>
           <p className="text-xs text-slate-500 mt-0.5">{sorted.length} 个活跃巨鲸</p>
         </div>
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="搜索地址/分类..."
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 w-64 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-slate-500 w-full sm:w-64 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
       <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
                 <th className="text-left px-4 py-3 font-medium">地址</th>

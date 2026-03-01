@@ -128,7 +128,7 @@ export default function Analytics() {
       </div>
 
       {/* Key metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard label="总交易数" value={performance?.total_trades ?? 0} accent="indigo" />
         <StatCard
           label="胜率"
@@ -148,7 +148,7 @@ export default function Analytics() {
         />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard
           label="最佳交易"
           value={`$${Number(performance?.best_trade ?? 0).toFixed(2)}`}
@@ -175,7 +175,7 @@ export default function Analytics() {
       </div>
 
       {/* Charts row 1: PnL + Drawdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
         {/* Cumulative PnL + Daily bars */}
         <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50 p-4">
           <h3 className="text-sm font-medium text-white mb-3">累计盈亏 & 每日收益</h3>

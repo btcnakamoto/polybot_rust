@@ -19,10 +19,10 @@ export default function StatCard({ label, value, sub, trend, accent = 'default' 
   const trendColor = trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-red-400' : 'text-white';
 
   return (
-    <div className={`bg-slate-800/80 backdrop-blur rounded-xl p-4 border border-slate-700/50 border-l-4 ${accentBorders[accent]}`}>
-      <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-2xl font-bold font-mono ${trendColor} leading-tight`}>{value}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+    <div className={`bg-slate-800/80 backdrop-blur rounded-xl p-3 sm:p-4 border border-slate-700/50 border-l-4 ${accentBorders[accent]}`}>
+      <p className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wider mb-0.5 sm:mb-1">{label}</p>
+      <p className={`text-lg sm:text-2xl font-bold font-mono ${trendColor} leading-tight truncate`}>{value}</p>
+      {sub && <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">{sub}</p>}
     </div>
   );
 }

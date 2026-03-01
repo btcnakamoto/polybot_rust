@@ -31,9 +31,9 @@ export default function Positions() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h2 className="text-xl font-semibold text-white">持仓管理</h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-white">持仓管理</h2>
           <p className="text-xs text-slate-500 mt-0.5">{openCount} 个活跃持仓</p>
         </div>
         <button
@@ -48,7 +48,7 @@ export default function Positions() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard label="活跃持仓" value={openCount} accent="indigo" />
         <StatCard label="已平仓" value={closedCount} accent="default" />
         <StatCard
@@ -67,7 +67,7 @@ export default function Positions() {
 
       <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
                 <th className="text-left px-4 py-3 font-medium">市场</th>

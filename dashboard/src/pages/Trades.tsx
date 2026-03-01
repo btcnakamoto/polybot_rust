@@ -40,7 +40,7 @@ export default function Trades() {
         <p className="text-xs text-slate-500 mt-0.5">复制引擎执行的所有订单</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <StatCard label="总订单" value={(trades ?? []).length} accent="indigo" />
         <StatCard label="已成交" value={filledCount} accent="emerald" />
         <StatCard label="失败" value={failedCount} accent="red" />
@@ -52,7 +52,7 @@ export default function Trades() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1">
+      <div className="flex gap-1 overflow-x-auto">
         {statuses.map((s) => (
           <button
             key={s}
@@ -70,7 +70,7 @@ export default function Trades() {
 
       <div className="bg-slate-800/80 backdrop-blur rounded-xl border border-slate-700/50">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[750px]">
             <thead>
               <tr className="text-xs text-slate-400 uppercase border-b border-slate-700/50">
                 <th className="text-left px-4 py-3 font-medium">市场</th>
