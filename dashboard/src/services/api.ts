@@ -14,7 +14,48 @@ import type {
   WhaleTrade,
 } from '../types';
 
+// ---------- Auth helpers ----------
+
+const TOKEN_KEY = 'polybot_api_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// ---------- Axios instance ----------
+
 const api = axios.create({ baseURL: '/api' });
+
+// Attach Bearer token to every request
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// On 401, clear token so the app shows the login page
+api.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    if (error.response?.status === 401) {
+      clearToken();
+      window.location.reload();
+    }
+    return Promise.reject(error);
+  },
+);
+
+// ---------- API functions ----------
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
   const { data } = await api.get<DashboardSummary>('/dashboard/summary');

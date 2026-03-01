@@ -1,15 +1,21 @@
+use axum::middleware;
 use axum::routing::{delete, get, post};
 use axum::Router;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
+use super::auth::require_auth;
 use super::handlers;
 
 pub fn create_router(state: AppState) -> Router {
-    Router::new()
-        // Health
+    // Public routes — no authentication required
+    let public = Router::new()
         .route("/health", get(handlers::health::health_check))
+        .route("/metrics", get(handlers::metrics::render));
+
+    // Protected API routes — require Bearer token when API_TOKEN is set
+    let protected = Router::new()
         // Dashboard
         .route("/api/dashboard/summary", get(handlers::dashboard::summary))
         // Whales
@@ -37,12 +43,19 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/control/resume", post(handlers::control::resume))
         .route("/api/control/status", get(handlers::control::status))
         .route("/api/control/cancel-all", post(handlers::control::cancel_all))
-        // Metrics
-        .route("/metrics", get(handlers::metrics::render))
         // WebSocket
         .route("/ws", get(handlers::ws::handler))
-        // Middleware
-        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(require_auth));
+
+    // CORS: allow same-origin + common dashboard origins
+    let cors = CorsLayer::new()
+        .allow_origin(Any) // nginx proxies from same origin; direct API access needs token
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    public
+        .merge(protected)
+        .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

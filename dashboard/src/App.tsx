@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
@@ -10,6 +11,8 @@ import Baskets from './pages/Baskets';
 import Signals from './pages/Signals';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
+import { getToken, setToken } from './services/api';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,6 +24,17 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  const [authed, setAuthed] = useState(() => !!getToken());
+
+  const handleLogin = (token: string) => {
+    setToken(token);
+    setAuthed(true);
+  };
+
+  if (!authed) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
