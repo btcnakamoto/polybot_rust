@@ -131,17 +131,20 @@ pub async fn get_market_question(pool: &PgPool, market_id: &str) -> anyhow::Resu
     Ok(row.map(|r| r.0))
 }
 
-/// Get slug and question for a market by condition_id or token_id from active_markets.
+/// Market info returned by get_market_info: (slug, question, clob_token_ids, outcomes).
+pub type MarketInfo = (Option<String>, Option<String>, Option<String>, Option<String>);
+
+/// Get slug, question, clob_token_ids, and outcomes for a market.
 /// Handles hex condition_ids (with/without `0x` prefix) and decimal token_ids
 /// (from chain listener events).
-pub async fn get_market_info(pool: &PgPool, market_id: &str) -> anyhow::Result<Option<(Option<String>, Option<String>)>> {
+pub async fn get_market_info(pool: &PgPool, market_id: &str) -> anyhow::Result<Option<MarketInfo>> {
+    let sql = "SELECT slug, question, clob_token_ids, outcomes FROM active_markets WHERE condition_id = $1";
+
     // Try as condition_id first
-    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT slug, question FROM active_markets WHERE condition_id = $1",
-    )
-    .bind(market_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<MarketInfo> = sqlx::query_as(sql)
+        .bind(market_id)
+        .fetch_optional(pool)
+        .await?;
 
     if row.is_some() {
         return Ok(row);
@@ -150,12 +153,10 @@ pub async fn get_market_info(pool: &PgPool, market_id: &str) -> anyhow::Result<O
     // Retry with 0x prefix
     if !market_id.starts_with("0x") {
         let prefixed = format!("0x{}", market_id);
-        let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-            "SELECT slug, question FROM active_markets WHERE condition_id = $1",
-        )
-        .bind(&prefixed)
-        .fetch_optional(pool)
-        .await?;
+        let row: Option<MarketInfo> = sqlx::query_as(sql)
+            .bind(&prefixed)
+            .fetch_optional(pool)
+            .await?;
 
         if row.is_some() {
             return Ok(row);
@@ -164,8 +165,8 @@ pub async fn get_market_info(pool: &PgPool, market_id: &str) -> anyhow::Result<O
 
     // Fallback: search by token_id within clob_token_ids JSON array.
     // Chain listener events use decimal token_ids as market_id.
-    let row: Option<(Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT slug, question FROM active_markets WHERE clob_token_ids LIKE '%' || $1 || '%'",
+    let row: Option<MarketInfo> = sqlx::query_as(
+        "SELECT slug, question, clob_token_ids, outcomes FROM active_markets WHERE clob_token_ids LIKE '%' || $1 || '%'",
     )
     .bind(market_id)
     .fetch_optional(pool)

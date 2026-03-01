@@ -151,7 +151,11 @@ export default function Positions() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-slate-300">{p.outcome}</td>
+                    <td className="px-4 py-2 text-slate-300">
+                      {p.outcome_label && p.outcome_label !== p.outcome
+                        ? <>{p.outcome_label} <span className="text-xs text-slate-500">({p.outcome})</span></>
+                        : p.outcome}
+                    </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-300">
                       {Number(p.size).toFixed(2)}
                     </td>

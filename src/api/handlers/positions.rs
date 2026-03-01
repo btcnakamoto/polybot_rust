@@ -21,6 +21,21 @@ pub struct PositionEnriched {
     pub position: Position,
     pub market_slug: Option<String>,
     pub market_question: Option<String>,
+    /// Resolved outcome label, e.g. "G2 Esports" instead of "Yes"
+    pub outcome_label: Option<String>,
+}
+
+/// Resolve the human-readable outcome label for a token_id.
+/// Maps token_id position in clob_token_ids to the same index in outcomes.
+fn resolve_outcome_label(
+    token_id: &str,
+    clob_token_ids: Option<&str>,
+    outcomes: Option<&str>,
+) -> Option<String> {
+    let tokens: Vec<String> = serde_json::from_str(clob_token_ids?).ok()?;
+    let labels: Vec<String> = serde_json::from_str(outcomes?).ok()?;
+    let idx = tokens.iter().position(|t| t == token_id)?;
+    labels.get(idx).cloned()
 }
 
 pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<PositionEnriched>>> {
@@ -28,15 +43,23 @@ pub async fn list(State(state): State<AppState>) -> Json<ApiResponse<Vec<Positio
         Ok(positions) => {
             let mut enriched = Vec::with_capacity(positions.len());
             for pos in positions {
-                let (market_slug, market_question) =
+                let (market_slug, market_question, outcome_label) =
                     match market_repo::get_market_info(&state.db, &pos.market_id).await {
-                        Ok(Some((slug, question))) => (slug, question),
-                        _ => (None, None),
+                        Ok(Some((slug, question, clob_token_ids, outcomes))) => {
+                            let label = resolve_outcome_label(
+                                &pos.token_id,
+                                clob_token_ids.as_deref(),
+                                outcomes.as_deref(),
+                            );
+                            (slug, question, label)
+                        }
+                        _ => (None, None, None),
                     };
                 enriched.push(PositionEnriched {
                     position: pos,
                     market_slug,
                     market_question,
+                    outcome_label,
                 });
             }
             Json(ApiResponse {

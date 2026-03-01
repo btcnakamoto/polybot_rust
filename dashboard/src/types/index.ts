@@ -68,6 +68,7 @@ export interface Position {
   exited_at?: string;
   market_slug?: string;
   market_question?: string;
+  outcome_label?: string;
 }
 
 export interface DashboardSummary {
