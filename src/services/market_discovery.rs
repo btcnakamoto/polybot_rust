@@ -64,6 +64,7 @@ pub async fn run_market_discovery(
                                 volume,
                                 liquidity,
                                 market.end_date_iso.as_deref(),
+                                market.clob_token_ids.as_deref(),
                             )
                             .await
                             {
@@ -118,16 +119,18 @@ async fn upsert_active_market(
     volume: Decimal,
     liquidity: Decimal,
     end_date_iso: Option<&str>,
+    clob_token_ids: Option<&str>,
 ) -> anyhow::Result<()> {
     sqlx::query(
         r#"
-        INSERT INTO active_markets (condition_id, question, volume, liquidity, end_date_iso, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
+        INSERT INTO active_markets (condition_id, question, volume, liquidity, end_date_iso, clob_token_ids, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
         ON CONFLICT (condition_id) DO UPDATE
         SET question = EXCLUDED.question,
             volume = EXCLUDED.volume,
             liquidity = EXCLUDED.liquidity,
             end_date_iso = EXCLUDED.end_date_iso,
+            clob_token_ids = EXCLUDED.clob_token_ids,
             updated_at = NOW()
         "#,
     )
@@ -136,6 +139,7 @@ async fn upsert_active_market(
     .bind(volume)
     .bind(liquidity)
     .bind(end_date_iso)
+    .bind(clob_token_ids)
     .execute(pool)
     .await?;
 
