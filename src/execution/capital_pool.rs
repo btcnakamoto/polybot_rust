@@ -93,6 +93,17 @@ impl CapitalPool {
         }
     }
 
+    /// Return capital when a position is closed (dry-run exits, SL/TP, etc.).
+    pub async fn return_capital(&self, amount: Decimal) {
+        let mut inner = self.inner.lock().await;
+        inner.total_balance += amount;
+        tracing::debug!(
+            amount = %amount,
+            new_balance = %inner.total_balance,
+            "Capital pool: returned capital from closed position"
+        );
+    }
+
     /// Re-calibrate from the actual on-chain USDC balance.
     /// The new total is set to `external_balance`, reservations are kept.
     pub async fn sync_balance(&self, external_balance: Decimal) {

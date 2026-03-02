@@ -7,6 +7,7 @@ use sqlx::PgPool;
 use tokio::time::{interval, Duration};
 
 use crate::db::{config_repo, market_repo, order_repo, position_repo};
+use crate::execution::capital_pool::CapitalPool;
 use crate::polymarket::clob_client::ClobClient;
 use crate::polymarket::trading::TradingClient;
 use crate::services::notifier::Notifier;
@@ -22,6 +23,7 @@ pub async fn run_position_monitor(
     pause_flag: Arc<AtomicBool>,
     interval_secs: u64,
     notifier: Option<Arc<Notifier>>,
+    capital_pool: Option<CapitalPool>,
 ) {
     let mut ticker = interval(Duration::from_secs(interval_secs));
 
@@ -123,9 +125,13 @@ pub async fn run_position_monitor(
             } else if pnl_pct >= take_profit {
                 Some("take_profit")
             } else {
-                // Trailing stop: only active if price has been above entry (peak > entry)
+                // Trailing stop: only active when position was AND IS profitable.
+                // If price drops below entry, the fixed SL handles it instead.
                 let peak = pos.peak_price.unwrap_or(pos.avg_entry_price);
-                if peak > pos.avg_entry_price && trailing_stop_pct > Decimal::ZERO {
+                if peak > pos.avg_entry_price
+                    && current_price > pos.avg_entry_price
+                    && trailing_stop_pct > Decimal::ZERO
+                {
                     let trailing_level =
                         peak * (Decimal::ONE - trailing_stop_pct / Decimal::ONE_HUNDRED);
                     if current_price <= trailing_level {
@@ -263,6 +269,12 @@ pub async fn run_position_monitor(
                 {
                     tracing::error!(error = %e, "Failed to close position in DB");
                     continue;
+                }
+
+                // Return capital to the pool (entry cost + realized PnL)
+                if let Some(ref cp) = capital_pool {
+                    let returned = pos.avg_entry_price * pos.size + realized_pnl;
+                    cp.return_capital(returned).await;
                 }
 
                 tracing::info!(

@@ -122,7 +122,7 @@ async fn process_signal(
 ) -> anyhow::Result<()> {
     // 0. Whale exit shortcut — bypass all sizing/risk gates
     if signal.is_whale_exit {
-        return handle_whale_exit(signal, pool, executor, config, notifier).await;
+        return handle_whale_exit(signal, pool, executor, config, notifier, capital_pool).await;
     }
 
     // 1. Calculate position size using dynamic available capital
@@ -144,8 +144,16 @@ async fn process_signal(
         signal_strength,
     );
 
-    if size <= Decimal::ZERO {
-        tracing::debug!(wallet = %signal.wallet, "Calculated size is zero, skipping");
+    // Minimum position value: $1 (prevents ghost positions from rounding)
+    let min_notional = Decimal::ONE;
+    let notional_value = size * signal.price;
+    if size <= Decimal::ZERO || notional_value < min_notional {
+        tracing::debug!(
+            wallet = %signal.wallet,
+            size = %size,
+            notional = %notional_value,
+            "Position size too small (< $1), skipping"
+        );
         return Ok(());
     }
 
@@ -412,6 +420,7 @@ async fn handle_whale_exit(
     executor: &OrderExecutor,
     config: &CopyEngineConfig,
     notifier: Option<&Notifier>,
+    capital_pool: &CapitalPool,
 ) -> anyhow::Result<()> {
     let pos = match position_repo::get_position_by_token_id(pool, &signal.asset_id).await? {
         Some(p) if p.status.as_deref() == Some("open") => p,
@@ -453,6 +462,10 @@ async fn handle_whale_exit(
                 let realized_pnl = (result.fill_price - pos.avg_entry_price) * pos.size;
                 position_repo::close_position_with_reason(pool, pos.id, realized_pnl, "whale_exit")
                     .await?;
+
+                // Return capital to pool
+                let returned = pos.avg_entry_price * pos.size + realized_pnl;
+                capital_pool.return_capital(returned).await;
 
                 tracing::info!(
                     position_id = %pos.id,

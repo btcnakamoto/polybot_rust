@@ -351,6 +351,7 @@ async fn main() -> anyhow::Result<()> {
         let monitor_pause = Arc::clone(&pause_flag);
         let monitor_interval = config.position_monitor_interval_secs;
         let monitor_notifier = notifier.clone();
+        let monitor_capital = if monitor_dry { Some(capital_pool.clone()) } else { None };
 
         tokio::spawn(async move {
             services::position_monitor::run_position_monitor(
@@ -361,6 +362,7 @@ async fn main() -> anyhow::Result<()> {
                 monitor_pause,
                 monitor_interval,
                 monitor_notifier,
+                monitor_capital,
             )
             .await;
         });
