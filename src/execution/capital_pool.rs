@@ -97,7 +97,7 @@ impl CapitalPool {
     pub async fn return_capital(&self, amount: Decimal) {
         let mut inner = self.inner.lock().await;
         inner.total_balance += amount;
-        tracing::debug!(
+        tracing::info!(
             amount = %amount,
             new_balance = %inner.total_balance,
             "Capital pool: returned capital from closed position"
